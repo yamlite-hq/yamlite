@@ -1,7 +1,7 @@
 import { type Dirent, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
-import { parse } from "yaml";
+import { isSeq, parse, parseDocument } from "yaml";
 import { instant, isDate, isDatetime } from "./datetime.ts";
 import { claims } from "./source/files.ts";
 import { markdownExt } from "./source/markdown.ts";
@@ -212,6 +212,19 @@ function hasFilesButNoYaml(dir: string): boolean {
   };
   visit(dir);
   return files && !yaml;
+}
+
+// a YAML file at the root that holds something other than a list (a lockfile, a tool's settings) is not data,
+// so the conventions make no table of it; yamlite.yaml can still declare one
+function notAList(path: string): boolean {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return false;
+  }
+  const doc = parseDocument(text);
+  return doc.errors.length === 0 && doc.contents !== null && !isSeq(doc.contents);
 }
 
 function scanRoot(root: string): Located[] {
@@ -816,7 +829,7 @@ export function resolveConfig(opts: OpenOptions, { requireConfig = true } = {}):
     for (const s of scanned) {
       const d = declared.get(s.name);
       if (d) merged.set(s.name, d);
-      else if (!covered(s)) merged.set(s.name, s);
+      else if (!covered(s) && !(s.glob === null && notAList(s.path))) merged.set(s.name, s);
     }
     for (const [name, d] of declared) if (!merged.has(name)) merged.set(name, d);
     const configFiles = CONFIG_NAMES.map((name) => join(root, name));
