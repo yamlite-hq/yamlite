@@ -348,6 +348,22 @@ describe("generateConfig", () => {
     expect(out).toContain("  tasks:\n    columns:\n");
   });
 
+  test("leaves out a root YAML file that is not a list, such as a lockfile", () => {
+    const root = tmpRoot();
+    write(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\nimporters: {}\n");
+    write(join(root, "people.yaml"), "- id: ada\n  name: Ada\n");
+    const config = generateConfig({ root });
+    expect(config).toContain("people:");
+    expect(config).not.toContain("pnpm-lock");
+  });
+
+  test("still reports a declared table whose file is not a list", () => {
+    const root = tmpRoot();
+    write(join(root, "settings.yaml"), "theme: dark\n");
+    write(join(root, "yamlite.yaml"), "tables:\n  settings: {}\n");
+    expect(() => generateConfig({ root, force: true })).toThrow(/settings: .*top-level value must be a sequence/);
+  });
+
   test("refuses mixed shapes and an existing file without force", () => {
     const root = tmpRoot();
     write(join(root, "tasks/a.yaml"), "title: A\n");
@@ -425,4 +441,16 @@ test("writes files: and body: for declared Markdown tables, declares other folde
   expect(out).toContain("  blog:\n    files: blog/**/*.md\n");
   expect(out).toContain("  posts:\n    files: src/**/*.md\n    body: content\n");
   expect(out).not.toContain("formats");
+});
+
+test("a folder initialized next to a lockfile opens and syncs", async () => {
+  const root = tmpRoot();
+  write(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\nimporters: {}\n");
+  write(join(root, "people.yaml"), "- id: ada\n  name: Ada\n");
+  expect(init({ root }).tables).toEqual(["people"]);
+  const y = await open({ root });
+  const results = await y.sync();
+  await y.close();
+  expect(results.map((r) => r.table)).toEqual(["people"]);
+  expect(sql(join(root, ".yamlite", "db.sqlite"), "SELECT name FROM people")).toEqual([{ name: "Ada" }]);
 });
