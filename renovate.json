@@ -1,0 +1,8 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices", ":approveMajorUpdates", "security:minimumReleaseAgeNpm", "group:allNonMajor"],
+  "postUpdateOptions": ["pnpmDedupe"],
+  "timezone": "Asia/Tokyo",
+  "schedule": ["* 0-9 * * 1"],
+  "labels": ["dependencies"]
+}
