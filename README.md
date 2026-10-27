@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jackchuka/yamlite/actions/workflows/ci.yml"><img src="https://github.com/jackchuka/yamlite/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://www.npmjs.com/package/@jackchuka/yamlite"><img src="https://img.shields.io/npm/v/@jackchuka/yamlite" alt="npm"></a>
+  <a href="https://github.com/yamlite-hq/yamlite/actions/workflows/ci.yml"><img src="https://github.com/yamlite-hq/yamlite/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://www.npmjs.com/package/yamlite"><img src="https://img.shields.io/npm/v/yamlite" alt="npm"></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A524.16-brightgreen" alt="Node.js ≥ 24.16">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
 </p>
@@ -47,7 +47,7 @@ flowchart LR
 - **Typed columns** — `true` → `BOOLEAN`, `1` → `INTEGER`, `1.5` → `REAL`, maps/lists → `JSON`, inferred from your data.
 - **Safe by default** — broken YAML is never overwritten or treated as deleted, mass deletions are refused, and the losing side of a conflict is always backed up.
 - **Rebuildable** — the database is a cache. Delete it, run `sync`, and it comes back from YAML.
-- **CLI and library** — use the `yamlite` command or `import { open } from "@jackchuka/yamlite"`.
+- **CLI and library** — use the `yamlite` command or `import { open } from "yamlite"`.
 - **No native dependencies** — built on Node's built-in `node:sqlite`.
 
 ## Installation
@@ -55,15 +55,15 @@ flowchart LR
 Requires Node.js 24.16 or later.
 
 ```bash
-npm install -g @jackchuka/yamlite
+npm install -g yamlite
 # or
-pnpm add -g @jackchuka/yamlite
+pnpm add -g yamlite
 ```
 
 Or run it without installing:
 
 ```bash
-npx @jackchuka/yamlite status ./notes
+npx yamlite status ./notes
 ```
 
 ## Quick Start
@@ -308,13 +308,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
-      - run: npx @jackchuka/yamlite check .
+      - run: npx yamlite check .
 ```
 
 ```sh
 #!/bin/sh
 # .git/hooks/pre-commit (chmod +x)
-exec npx @jackchuka/yamlite check .
+exec npx yamlite check .
 ```
 
 ## Query
@@ -362,7 +362,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
-      - run: npx @jackchuka/yamlite export .
+      - run: npx yamlite export .
       - uses: actions/upload-pages-artifact@v3
         with: { path: .yamlite-export }
       - uses: actions/deploy-pages@v4
@@ -445,7 +445,7 @@ join projects__milestones__tasks t on t.projects_id = m.projects_id and t.milest
 `yamlite guide` prints a guide to writing `yamlite.yaml` — the workflow (`init`, `status`, `check`), how to lay out tables, and when each rule fits — matching the installed version. Point any coding agent at it, or install it as an [Agent Skill](https://agentskills.io) for Claude Code, Codex, Cursor and others:
 
 ```bash
-npx skills add jackchuka/yamlite
+npx skills add yamlite-hq/yamlite
 ```
 
 The skill tells the agent to read `yamlite guide` and to finish with `yamlite check` passing. The Ask AI panel in `yamlite serve` reads the same guide.
@@ -715,7 +715,7 @@ For every record, YAMLite compares the current file hash and row hash with the h
 ## Library
 
 ```ts
-import { open } from "@jackchuka/yamlite";
+import { open } from "yamlite";
 
 const y = await open({ root: "./notes" }); // or { db: "./app.db", tables: [{ name: "tasks", files: "./tasks/**/*.yaml" }] }
 
