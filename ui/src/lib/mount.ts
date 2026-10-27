@@ -10,7 +10,7 @@ export interface MountOptions {
   fit?: "viewport" | "container";
   // the UI lives inside another product: no yamlite logo, no local paths or address
   embedded?: boolean;
-  // a page on the host's origin running @jackchuka/yamlite/ui/page-frame, for a host whose policy refuses inline scripts
+  // a page on the host's origin running yamlite/ui/page-frame, for a host whose policy refuses inline scripts
   pageFrame?: string;
   // shapes the link Copy app link produces, e.g. to point at the default branch; without it there is no Copy app link
   appLink?: (page: string) => string;

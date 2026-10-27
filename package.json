@@ -1,5 +1,5 @@
 {
-  "name": "@jackchuka/yamlite",
+  "name": "yamlite",
   "version": "0.0.0",
   "description": "Sync YAML files and SQLite in both directions",
   "keywords": [
@@ -11,13 +11,13 @@
     "watch",
     "yaml"
   ],
-  "homepage": "https://github.com/jackchuka/yamlite#readme",
-  "bugs": "https://github.com/jackchuka/yamlite/issues",
+  "homepage": "https://github.com/yamlite-hq/yamlite#readme",
+  "bugs": "https://github.com/yamlite-hq/yamlite/issues",
   "license": "MIT",
   "author": "jackchuka",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jackchuka/yamlite.git"
+    "url": "git+https://github.com/yamlite-hq/yamlite.git"
   },
   "bin": {
     "yamlite": "dist/cli.mjs"

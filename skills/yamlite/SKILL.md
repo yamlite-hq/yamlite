@@ -9,6 +9,6 @@ Before writing or changing `yamlite.yaml`, read the guide that matches the insta
 
     yamlite guide
 
-(Without a global install: `npx @jackchuka/yamlite guide`.)
+(Without a global install: `npx yamlite guide`.)
 
 Follow its workflow: start from `yamlite init --print`, edit only what inference cannot know, preview with `yamlite status`, run `yamlite sync`, and finish only when `yamlite check` exits 0.

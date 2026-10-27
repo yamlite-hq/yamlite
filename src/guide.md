@@ -1,6 +1,6 @@
 # Writing yamlite.yaml
 
-YAMLite keeps a folder of YAML (and Markdown) files and a local SQLite database in sync in both directions. `yamlite.yaml` at the data root is the schema of record: it names the tables, pins column types and declares the rules YAMLite checks. This guide is how to write it well. The full reference is the README: https://github.com/jackchuka/yamlite#configuration
+YAMLite keeps a folder of YAML (and Markdown) files and a local SQLite database in sync in both directions. `yamlite.yaml` at the data root is the schema of record: it names the tables, pins column types and declares the rules YAMLite checks. This guide is how to write it well. The full reference is the README: https://github.com/yamlite-hq/yamlite#configuration
 
 ## Workflow
 
@@ -148,7 +148,7 @@ tables:
 
 ## Key reference
 
-Keys of a table under `tables:`. Details: https://github.com/jackchuka/yamlite#configuration
+Keys of a table under `tables:`. Details: https://github.com/yamlite-hq/yamlite#configuration
 
 | Key          | Value                                                                                                                                                                           |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
