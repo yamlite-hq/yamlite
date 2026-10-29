@@ -28,7 +28,11 @@ test("fetch round-trips method, body, status, headers and JSON", async () => {
     body: '{"a":1}',
   });
   expect(res.status).toBe(201);
-  expect(await res.json()).toEqual({ method: "POST", body: { a: 1 }, path: "/api/rows" });
+  expect(await res.json()).toEqual({
+    method: "POST",
+    body: { a: 1 },
+    path: "/api/rows",
+  });
   close();
 });
 
@@ -56,7 +60,9 @@ test("eventSource delivers named events and stops the stream on close", async ()
         });
       },
     });
-    return new Response(body, { headers: { "content-type": "text/event-stream" } });
+    return new Response(body, {
+      headers: { "content-type": "text/event-stream" },
+    });
   });
   const es = t.eventSource("/api/events");
   let errors = 0;
@@ -79,7 +85,10 @@ test("eventSource delivers named events and stops the stream on close", async ()
 
 test("eventSource fires error when the stream ends without close", async () => {
   const { t, close } = pair(
-    async () => new Response(enc.encode(": ping\n\n"), { headers: { "content-type": "text/event-stream" } }),
+    async () =>
+      new Response(enc.encode(": ping\n\n"), {
+        headers: { "content-type": "text/event-stream" },
+      }),
   );
   const es = t.eventSource("/api/events");
   await new Promise<void>((done) => es.addEventListener("error", () => done()));
@@ -89,7 +98,10 @@ test("eventSource fires error when the stream ends without close", async () => {
 
 test("on* properties are called like a real EventSource", async () => {
   const { t, close } = pair(
-    async () => new Response(enc.encode("data: hi\n\n"), { headers: { "content-type": "text/event-stream" } }),
+    async () =>
+      new Response(enc.encode("data: hi\n\n"), {
+        headers: { "content-type": "text/event-stream" },
+      }),
   );
   const es = t.eventSource("/api/events");
   const seen: string[] = [];
@@ -197,7 +209,9 @@ test("an already aborted signal rejects without sending", async () => {
   });
   const ac = new AbortController();
   ac.abort();
-  await expect(t.fetch("/api/x", { signal: ac.signal })).rejects.toMatchObject({ name: "AbortError" });
+  await expect(t.fetch("/api/x", { signal: ac.signal })).rejects.toMatchObject({
+    name: "AbortError",
+  });
   await new Promise((r) => setTimeout(r, 10));
   expect(called).toBe(false);
   close();
@@ -242,5 +256,46 @@ test("a null-body status resolves with an empty body", async () => {
   const res = await t.fetch("/api/x", { method: "DELETE" });
   expect(res.status).toBe(204);
   expect(await res.text()).toBe("");
+  close();
+});
+
+test("response bytes arrive unchanged, including invalid UTF-8", async () => {
+  const sent = [new Uint8Array([0xff, 0xfe, 0x00]), new Uint8Array([0xc3])];
+  const { t, close } = pair(async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        for (const part of sent) c.enqueue(part);
+        c.close();
+      },
+    });
+    return new Response(body, {
+      headers: { "content-type": "application/octet-stream" },
+    });
+  });
+  const res = await t.fetch("/api/pages/p/file?path=x");
+  expect([...new Uint8Array(await (await res.blob()).arrayBuffer())]).toEqual([0xff, 0xfe, 0x00, 0xc3]);
+  close();
+});
+
+test("eventSource emits a character split across chunks", async () => {
+  const bytes = enc.encode("data: \u3042\n\n");
+  const { t, close } = pair(async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(bytes.slice(0, 7));
+        c.enqueue(bytes.slice(7));
+        c.close();
+      },
+    });
+    return new Response(body, {
+      headers: { "content-type": "text/event-stream" },
+    });
+  });
+  const es = t.eventSource("/api/events");
+  const data = await new Promise<string>((done) =>
+    es.addEventListener("message", (e) => done((e as MessageEvent).data)),
+  );
+  expect(data).toBe("\u3042");
+  es.close();
   close();
 });
