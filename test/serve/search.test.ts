@@ -172,3 +172,33 @@ test("the label comes from a title, name or label column, in that order", () => 
     ["people", "Aiko"],
   ]);
 });
+
+test("spaces and separators are ignored on both sides of the match", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`CREATE TABLE items ("id" TEXT PRIMARY KEY, "title" TEXT);
+           INSERT INTO items VALUES ('mdm-06', 'Master data'), ('n1', 'Follows up on MDM_06.'), ('n2', 'mdm 7')`);
+  const columns = new Map<string, ColumnType>([
+    ["id", "TEXT"],
+    ["title", "TEXT"],
+  ]);
+  const run = (needle: string) => {
+    const built = buildSearchSql([{ name: "items", key: "id", columns }], needle, 5);
+    if (!built) throw new Error("no statement");
+    return (db.prepare(built.sql).all(...built.params) as DbRow[]).map((r) => {
+      const h = toSearchHit(r);
+      return [h.key, h.rank];
+    });
+  };
+  const both = [
+    ["mdm-06", 0],
+    ["n1", 3],
+  ];
+  expect(run("mdm06")).toEqual(both);
+  expect(run("mdm 06")).toEqual(both);
+  expect(run("MDM/06")).toEqual(both);
+});
+
+test("a query must keep enough characters once separators go", () => {
+  expect(() => parseSearchQuery(new URLSearchParams("q=a-"))).toThrow();
+  expect(() => parseSearchQuery(new URLSearchParams("q=--"))).toThrow();
+});

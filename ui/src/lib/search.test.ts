@@ -17,6 +17,13 @@ test("enoughText counts characters after trimming", () => {
   expect(enoughText(" a ")).toBe(false);
   expect(enoughText("ab")).toBe(true);
   expect(enoughText("日本")).toBe(true);
+  expect(enoughText("a-")).toBe(false);
+});
+
+test("snippet marks a match that spans separators the query left out", () => {
+  expect(snippet("see MDM-06 now", "mdm06")).toEqual({ before: "see ", match: "MDM-06", after: " now" });
+  expect(snippet("see MDM-06 now", "mdm 06")).toEqual({ before: "see ", match: "MDM-06", after: " now" });
+  expect(snippet("mdm_06", "mdm-06")).toEqual({ before: "", match: "mdm_06", after: "" });
 });
 
 test("snippet keeps the match and up to 30 characters either side", () => {
