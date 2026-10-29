@@ -63,7 +63,8 @@ export async function findRepo(root: string): Promise<Repo | null> {
   }
 }
 
-const toRoot = (repo: Repo, topPath: string): string | null =>
+// a path under the work tree top → its data-root path, or null when it is outside the data root
+export const toRoot = (repo: Repo, topPath: string): string | null =>
   topPath.startsWith(repo.prefix) ? topPath.slice(repo.prefix.length) : null;
 
 export async function currentBranch(repo: Repo): Promise<string | null> {

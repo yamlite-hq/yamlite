@@ -668,5 +668,41 @@
         "n=other": "Put back {count} changes (no undo)"
       }
     }
+  ],
+  "git_restore_default": "Restore from {branch}",
+  "restore_title": "Restore from {branch}",
+  "restore_description": "Choose files this review changes to write them back as {branch} has them. A file {branch} does not have is removed. They become edits you send as usual, adding a commit to this review.",
+  "restore_none": "This review changes no files from {branch}.",
+  "restore_unsent": "unsent edits",
+  "restore_submit": [
+    {
+      "declarations": ["input count", "local n = count: plural"],
+      "selectors": ["n"],
+      "match": {
+        "n=one": "Restore {count} file",
+        "n=other": "Restore {count} files"
+      }
+    }
+  ],
+  "restore_submit_confirm": [
+    {
+      "declarations": ["input count", "local n = count: plural"],
+      "selectors": ["n"],
+      "match": {
+        "n=one": "Restore {count} file, losing unsent edits",
+        "n=other": "Restore {count} files, losing unsent edits"
+      }
+    }
+  ],
+  "restore_restoring": "Restoring…",
+  "restore_done": [
+    {
+      "declarations": ["input count", "local n = count: plural"],
+      "selectors": ["n"],
+      "match": {
+        "n=one": "Restored {count} file from {branch}; send it to add it to the review",
+        "n=other": "Restored {count} files from {branch}; send them to add them to the review"
+      }
+    }
   ]
 }

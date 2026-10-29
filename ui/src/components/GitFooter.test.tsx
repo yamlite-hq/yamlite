@@ -11,6 +11,9 @@ vi.mock("@/lib/git", async (orig) => ({
 vi.mock("./ReviewDialog", () => ({
   ReviewDialog: ({ open }: { open: boolean }) => (open ? <div role="dialog" aria-label="review" /> : null),
 }));
+vi.mock("./RestoreDefaultDialog", () => ({
+  RestoreDefaultDialog: ({ open }: { open: boolean }) => (open ? <div role="dialog" aria-label="restore" /> : null),
+}));
 afterEach(() => {
   gitState = null;
 });
@@ -33,6 +36,7 @@ test("shows the branch and the number of changes, and opens the dialog", () => {
     defaultBranch: "main",
     upstream: "origin/main",
     namesBranch: true,
+    restoresDefault: false,
     changes: [change, { ...change, path: "tasks/b.yaml" }],
   };
   render(<GitFooter />);
@@ -43,13 +47,41 @@ test("shows the branch and the number of changes, and opens the dialog", () => {
 });
 
 test("the button is disabled without changes and on a detached HEAD", () => {
-  gitState = { branch: "main", defaultBranch: "main", upstream: null, namesBranch: true, changes: [] };
+  gitState = {
+    branch: "main",
+    defaultBranch: "main",
+    upstream: null,
+    namesBranch: true,
+    restoresDefault: false,
+    changes: [],
+  };
   const { unmount } = render(<GitFooter />);
   expect(screen.getByText("no changes")).toBeTruthy();
   expect((screen.getByRole("button", { name: "Send for review" }) as HTMLButtonElement).disabled).toBe(true);
   unmount();
-  gitState = { branch: null, defaultBranch: "main", upstream: null, namesBranch: true, changes: [change] };
+  gitState = {
+    branch: null,
+    defaultBranch: "main",
+    upstream: null,
+    namesBranch: true,
+    restoresDefault: false,
+    changes: [change],
+  };
   render(<GitFooter />);
   expect(screen.getByText("no branch")).toBeTruthy();
   expect((screen.getByRole("button", { name: "Send for review" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+test("a review branch offers the restore from the default branch", () => {
+  gitState = {
+    branch: "work",
+    defaultBranch: "main",
+    upstream: null,
+    namesBranch: true,
+    restoresDefault: true,
+    changes: [],
+  };
+  render(<GitFooter />);
+  fireEvent.click(screen.getByRole("button", { name: "Restore from main" }));
+  expect(screen.getByRole("dialog", { name: "restore" })).toBeTruthy();
 });

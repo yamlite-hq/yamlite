@@ -1,4 +1,4 @@
-import { chmodSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, expect, test } from "vitest";
 import { localDriver, NoRepository, ReviewRefused } from "../../src/git/driver.ts";
@@ -83,4 +83,40 @@ test("without a repository the local driver answers no git, and finds one create
   withRemote(root);
   expect(await d.hasRemote()).toBe(true);
   expect(d.steps?.repo).toEqual(await findRepo(root));
+});
+
+test("the local driver lists a review's changes under the data folder and reads the default branch's files", async () => {
+  const top = tmpRoot();
+  const root = join(top, "data");
+  writeFileSync(join(top, "README.md"), "top\n");
+  mkdirSync(root);
+  writeFileSync(join(root, "a.yaml"), "title: A\n");
+  withRemote(top);
+  const d = await localDriver(root, async () => null);
+  expect(await d.defaultBranchFiles!.changes()).toEqual([]);
+  git(top, "switch", "-q", "-c", "work");
+  writeFileSync(join(top, "README.md"), "changed\n");
+  writeFileSync(join(root, "a.yaml"), "title: A2\n");
+  writeFileSync(join(root, "b.yaml"), "title: B\n");
+  commit(top, "review");
+  expect(await d.defaultBranchFiles!.changes()).toEqual([
+    { path: "a.yaml", status: "modified" },
+    { path: "b.yaml", status: "added" },
+  ]);
+  expect(Buffer.from((await d.defaultBranchFiles!.file("a.yaml"))!).toString()).toBe("title: A\n");
+  expect(await d.defaultBranchFiles!.file("b.yaml")).toBeNull();
+  await expect(d.defaultBranchFiles!.file("../README.md")).rejects.toThrow(/outside the repository/);
+});
+
+test("without a fetched default branch the local driver reads the local one", async () => {
+  const root = dataRoot();
+  withRemote(root);
+  git(root, "switch", "-q", "-c", "work");
+  writeFileSync(join(root, "a.yaml"), "title: A\n");
+  commit(root, "review");
+  git(root, "update-ref", "-d", "refs/remotes/origin/main");
+  const d = await localDriver(root, async () => null);
+  expect(await d.defaultBranchFiles!.changes()).toEqual([{ path: "a.yaml", status: "added" }]);
+  git(root, "branch", "-q", "-D", "main");
+  await expect(d.defaultBranchFiles!.changes()).rejects.toThrow(/default branch main is not in this clone/);
 });

@@ -80,6 +80,7 @@ test("the review button shows the number of changes and opens the dialog", () =>
     defaultBranch: "main",
     upstream: "origin/main",
     namesBranch: true,
+    restoresDefault: false,
     changes: [
       { path: "tasks/a.yaml", status: "modified", table: "tasks", records: null },
       { path: "tasks/b.yaml", status: "added", table: "tasks", records: null },
@@ -93,7 +94,14 @@ test("the review button shows the number of changes and opens the dialog", () =>
 });
 
 test("no review button without changes or outside git", () => {
-  gitState = { branch: "main", defaultBranch: "main", upstream: null, namesBranch: true, changes: [] };
+  gitState = {
+    branch: "main",
+    defaultBranch: "main",
+    upstream: null,
+    namesBranch: true,
+    restoresDefault: false,
+    changes: [],
+  };
   const { unmount } = render(<MobileNav onNewTable={() => {}} />);
   expect(screen.getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual(["menu", "search"]);
   unmount();

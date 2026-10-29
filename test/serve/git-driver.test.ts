@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from "vitest";
 import type { GitDriver, GitStatus } from "../../src/git/driver.ts";
 import { join } from "node:path";
 import { useGitEnv, withRemote } from "../gitrepo.ts";
-import { write } from "../helpers.ts";
+import { read, write } from "../helpers.ts";
 import { tasksWorkspace } from "./helpers.ts";
 
 beforeEach(() => useGitEnv());
@@ -69,4 +69,43 @@ test("a branch name for a review goes only to a host that takes one", async () =
   const { w: taking } = await tasksWorkspace({ git: { ...fakeDriver({}, status), namesBranch: true } });
   expect((await (await taking.router.dispatch(new Request("http://x/api/git"))).json()).git.namesBranch).toBe(true);
   expect((await send(taking, "fix/tasks")).status).toBe(200);
+});
+
+test("a driver that cannot read the default branch offers no restore", async () => {
+  const status = { branch: "review", upstream: null, changes: [] };
+  const { w } = await tasksWorkspace({ git: fakeDriver({}, status) });
+  const get = async (path: string, init?: RequestInit) => w.router.dispatch(new Request(`http://x${path}`, init));
+  expect((await (await get("/api/git")).json()).git.restoresDefault).toBe(false);
+  expect((await get("/api/git/default")).status).toBe(404);
+  const post = {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ files: ["tasks/a.yaml"] }),
+  };
+  expect((await get("/api/git/restore-default", post)).status).toBe(404);
+});
+
+test("a host's default branch files are listed and written back", async () => {
+  const defaults: Record<string, string> = { "tasks/a.yaml": "title: A\n" };
+  const git: GitDriver = {
+    ...fakeDriver({ "tasks/a.yaml": "title: B\n" }, { branch: "review", upstream: null, changes: [] }),
+    defaultBranchFiles: {
+      changes: async () => [{ path: "tasks/a.yaml", status: "modified" }],
+      file: async (p) => (defaults[p] === undefined ? null : Buffer.from(defaults[p])),
+    },
+  };
+  const { w, root } = await tasksWorkspace({ git });
+  write(join(root, "tasks/a.yaml"), "title: B\n");
+  const get = async (path: string, init?: RequestInit) => w.router.dispatch(new Request(`http://x${path}`, init));
+  expect((await (await get("/api/git")).json()).git.restoresDefault).toBe(true);
+  expect((await (await get("/api/git/default")).json()).files).toEqual([
+    { path: "tasks/a.yaml", status: "modified", table: "tasks", unsent: false },
+  ]);
+  const r = await get("/api/git/restore-default", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ files: ["tasks/a.yaml"] }),
+  });
+  expect(r.status).toBe(200);
+  expect(read(join(root, "tasks/a.yaml"))).toBe("title: A\n");
 });

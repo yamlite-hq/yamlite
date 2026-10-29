@@ -6,7 +6,14 @@ export type { Credentials } from "./agent/providers.ts";
 export { type AiOptions, createWorkspace, type Workspace, type WorkspaceOptions } from "./serve/workspace.ts";
 export type { ApiContext } from "./serve/context.ts";
 export { HttpError } from "./serve/errors.ts";
-export { ReviewRefused, type GitDriver, type GitStatus, type ReviewOutcome, type StepRunner } from "./git/driver.ts";
+export {
+  type DefaultBranchFiles,
+  ReviewRefused,
+  type GitDriver,
+  type GitStatus,
+  type ReviewOutcome,
+  type StepRunner,
+} from "./git/driver.ts";
 export {
   describeChange,
   fieldChanges,
