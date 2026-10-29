@@ -1,20 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowUpRight, X } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { fieldLabel } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
-import { usePanelWidth } from "@/lib/panelWidth";
 import { changedFields, setIn } from "@/lib/form";
 import { isReadOnly } from "@/lib/mode";
 import { useEvents, useReflectDispatch } from "@/lib/providers";
 import { useIsMobile } from "@/lib/useIsMobile";
-import { useViewportHeight } from "@/lib/viewportHeight";
 import type { RecordDetail, Row, ViewMeta } from "@/lib/types";
-import { cn } from "@/lib/utils";
 import { FormField } from "./FormField";
-import { PanelResizeHandle } from "./PanelResizeHandle";
-import { panel, useDismiss } from "./RecordDrawer";
+import { drawer, useDismiss } from "./RecordDrawer";
+import { SidePanel, SidePanelFooter, SidePanelHeader } from "./SidePanel";
 import { ReflectBadge } from "./ReflectBadge";
 import { m } from "@/paraglide/messages.js";
 
@@ -58,10 +55,7 @@ export function ViewRowDrawer({
   const client = useQueryClient();
   const dispatch = useReflectDispatch();
   const { connected } = useEvents();
-  const [width, setWidth] = usePanelWidth("yamlite-drawer-width", 360);
   const mobile = useIsMobile();
-  const viewportHeight = useViewportHeight(mobile);
-  const size = mobile ? (viewportHeight ? { height: viewportHeight } : undefined) : { width };
 
   const parentKey = row ? String(row[view.identity[0] as string]) : undefined;
   const { data, error } = useQuery({
@@ -146,30 +140,16 @@ export function ViewRowDrawer({
   const missing = row === undefined || (data !== undefined && element === undefined);
 
   return (
-    <aside data-record-drawer aria-label={m.view_row_label()} className={cn(panel, "flex flex-col")} style={size}>
-      {!mobile && <PanelResizeHandle width={width} label={m.record_resize()} onResize={setWidth} />}
-      <div className="flex items-center gap-2 border-b px-4 py-3 max-md:gap-1 max-md:px-2 max-md:pt-[calc(0.5rem+env(safe-area-inset-top))] max-md:pb-2">
-        {mobile && (
-          <button
-            type="button"
-            aria-label={m.common_close_lower()}
-            onClick={onClose}
-            className="grid size-10 place-items-center"
-          >
-            <ArrowLeft className="size-5" />
-          </button>
-        )}
-        <span className="min-w-0 flex-1 truncate font-mono font-bold">{rowKey}</span>
+    <SidePanel {...drawer} resizeLabel={m.record_resize()} aria-label={m.view_row_label()}>
+      <SidePanelHeader onClose={onClose}>
+        <span className="min-w-0 flex-1 truncate font-mono font-bold" title={rowKey}>
+          {rowKey}
+        </span>
         <Button variant="ghost" size="sm" disabled={!row} onClick={onOpenRecord}>
           <ArrowUpRight className="size-3.5" /> {m.view_row_open_record({ table: view.table })}
         </Button>
-        {!mobile && (
-          <button type="button" aria-label={m.common_close_lower()} onClick={onClose} className="text-muted-foreground">
-            <X className="size-4" />
-          </button>
-        )}
-      </div>
-      <div className="truncate px-4 pt-3 font-mono text-[11px] text-muted-foreground max-md:text-[12px]">
+      </SidePanelHeader>
+      <div className="truncate px-4 pt-3 font-mono text-[13px] text-muted-foreground">
         {data ? `${data.file} › ${path.join(".")}` : m.table_from({ parent: view.parent })}
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
@@ -234,8 +214,8 @@ export function ViewRowDrawer({
         )}
       </div>
       {!isReadOnly() && (
-        <div className="flex items-center gap-2 border-t px-4 py-2.5 max-md:flex-wrap max-md:pb-[calc(0.625rem+env(safe-area-inset-bottom))]">
-          <span className="mr-auto flex min-w-0 flex-col text-[11px] text-muted-foreground max-md:basis-full max-md:text-[12px]">
+        <SidePanelFooter className="max-md:flex-wrap">
+          <span className="mr-auto flex min-w-0 flex-col text-[13px] text-muted-foreground max-md:basis-full">
             {changes > 0 ? (
               m.record_changes({ count: changes })
             ) : parentKey !== undefined ? (
@@ -269,8 +249,8 @@ export function ViewRowDrawer({
           >
             {mobile ? m.common_save() : m.record_save_shortcut()}
           </Button>
-        </div>
+        </SidePanelFooter>
       )}
-    </aside>
+    </SidePanel>
   );
 }

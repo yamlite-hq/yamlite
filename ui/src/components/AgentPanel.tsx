@@ -1,4 +1,4 @@
-import { History, ScrollText, Settings, Square, X } from "lucide-react";
+import { History, ScrollText, Settings, Square } from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -21,13 +21,10 @@ import {
 } from "@/lib/agent";
 import { type AiChoice, currentChoice, saveChoice, useAiHost, useAiProviders } from "@/lib/ai";
 import { ApiError } from "@/lib/api";
-import { usePanelWidth } from "@/lib/panelWidth";
-import { useIsMobile } from "@/lib/useIsMobile";
 import { formatWhen } from "@/lib/format";
-import { cn } from "@/lib/utils";
 import { AiInstructionsDialog } from "./AiInstructionsDialog";
 import { AiSettings } from "./AiSettings";
-import { PanelResizeHandle } from "./PanelResizeHandle";
+import { SidePanel, SidePanelFooter, SidePanelHeader } from "./SidePanel";
 import { ProposalCard } from "./ProposalCard";
 import { m } from "@/paraglide/messages.js";
 
@@ -174,8 +171,6 @@ export function AgentPanel() {
   const host = useAiHost();
   const viewerKeys = host?.viewerKeys ?? true;
   const state = useChat();
-  const mobile = useIsMobile();
-  const [width, setWidth] = usePanelWidth("yamlite-agent-width", 420);
   const [choice, setChoice] = useState<AiChoice | null>(() =>
     providers ? currentChoice(providers, { viewerKeys }) : null,
   );
@@ -252,16 +247,14 @@ export function AgentPanel() {
   };
 
   return (
-    <aside
+    <SidePanel
+      layout="docked"
+      widthKey="yamlite-agent-width"
+      defaultWidth={420}
+      resizeLabel={m.agent_resize()}
       aria-label={m.nav_ask_ai()}
-      className={cn(
-        "relative flex min-h-0 flex-col border-l bg-background",
-        mobile && "fixed inset-0 z-40 h-dvh border-l-0",
-      )}
-      style={mobile ? undefined : { width }}
     >
-      {!mobile && <PanelResizeHandle width={width} label="Resize AI panel" onResize={setWidth} />}
-      <header className="flex items-center justify-between gap-2 border-b px-3.5 py-2.5">
+      <SidePanelHeader onClose={agentPanel.close} className="justify-between">
         <div className="flex min-w-0 items-center gap-1">
           {!noHostKey && (
             <Button
@@ -308,11 +301,8 @@ export function AgentPanel() {
           >
             {m.agent_new_conversation()}
           </Button>
-          <Button variant="ghost" size="icon" aria-label={m.common_close()} onClick={agentPanel.close}>
-            <X className="size-5" />
-          </Button>
         </div>
-      </header>
+      </SidePanelHeader>
       {noHostKey && (
         <div className="flex flex-col items-start gap-2 border-b p-3.5 text-[15px]">
           <p>{host?.unavailable ? m.agent_ai_unavailable() : m.agent_no_host_key()}</p>
@@ -394,37 +384,39 @@ export function AgentPanel() {
           </div>
         )}
       </div>
-      <form
-        className="border-t p-3.5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submit();
-        }}
-      >
-        <textarea
-          ref={input}
-          aria-label={m.agent_input()}
-          disabled={noHostKey}
-          rows={3}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={m.agent_placeholder()}
-          className="w-full resize-none rounded-lg border bg-panel px-3 py-2.5 text-[16px] outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-        />
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <span className="text-[14px] text-muted-foreground">{m.agent_read_only_note()}</span>
-          {state.busy ? (
-            <Button type="button" variant="outline" onClick={() => void chat.stop()}>
-              <Square className="size-4" /> {m.agent_stop()}
-            </Button>
-          ) : (
-            <Button type="submit" disabled={noHostKey || sending || text.trim() === ""}>
-              {m.agent_send()}
-            </Button>
-          )}
-        </div>
-      </form>
-    </aside>
+      <SidePanelFooter>
+        <form
+          className="flex-1"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submit();
+          }}
+        >
+          <textarea
+            ref={input}
+            aria-label={m.agent_input()}
+            disabled={noHostKey}
+            rows={3}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={m.agent_placeholder()}
+            className="w-full resize-none rounded-lg border bg-panel px-3 py-2.5 text-[16px] outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+          />
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <span className="text-[14px] text-muted-foreground">{m.agent_read_only_note()}</span>
+            {state.busy ? (
+              <Button type="button" variant="outline" onClick={() => void chat.stop()}>
+                <Square className="size-4" /> {m.agent_stop()}
+              </Button>
+            ) : (
+              <Button type="submit" disabled={noHostKey || sending || text.trim() === ""}>
+                {m.agent_send()}
+              </Button>
+            )}
+          </div>
+        </form>
+      </SidePanelFooter>
+    </SidePanel>
   );
 }

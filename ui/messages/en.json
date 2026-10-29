@@ -138,7 +138,7 @@
   "view_row_stale": "The record changed elsewhere; the form now shows the latest. Make the edit again.",
   "record_label": "record",
   "record_resize": "Resize record panel",
-  "common_close_lower": "close",
+  "agent_resize": "Resize AI panel",
   "record_tab_form": "Form",
   "record_tab_file": "File",
   "record_tab_history": "History",
