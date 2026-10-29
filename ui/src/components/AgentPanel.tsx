@@ -1,4 +1,4 @@
-import { History, Settings, Square, X } from "lucide-react";
+import { History, ScrollText, Settings, Square, X } from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -25,6 +25,7 @@ import { usePanelWidth } from "@/lib/panelWidth";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { formatWhen } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { AiInstructionsDialog } from "./AiInstructionsDialog";
 import { AiSettings } from "./AiSettings";
 import { PanelResizeHandle } from "./PanelResizeHandle";
 import { ProposalCard } from "./ProposalCard";
@@ -179,6 +180,7 @@ export function AgentPanel() {
     providers ? currentChoice(providers, { viewerKeys }) : null,
   );
   const [editing, setEditing] = useState(false);
+  const [instructionsOpen, setInstructionsOpen] = useState(false);
   const [text, setText] = useState("");
   const [startError, setStartError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -284,6 +286,16 @@ export function AgentPanel() {
               chat.open(c.id);
             }}
           />
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={m.ai_instructions_open()}
+            title={m.ai_instructions_open()}
+            onClick={() => setInstructionsOpen(true)}
+          >
+            <ScrollText className="size-4" />
+          </Button>
+          {instructionsOpen && <AiInstructionsDialog open onOpenChange={setInstructionsOpen} />}
         </div>
         <div className="flex items-center gap-1">
           <Button

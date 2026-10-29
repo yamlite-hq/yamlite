@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import type { AiChoice } from "./ai";
 import { api, request } from "./api";
 import type { StepResult } from "../../../src/git/types.ts";
 import type { Row } from "./types";
@@ -69,6 +70,10 @@ export const gitApi = {
   state: () => request<{ git: GitState | null }>("GET", "/api/git").then((r) => r.git),
   review: (body: { title: string; body: string; paths: string[]; branch?: string }) =>
     request<ReviewResult>("POST", "/api/git/review", body),
+  // the open PR the review is added to; null when there is none or the host cannot tell
+  openPr: () => request<{ url: string | null }>("GET", "/api/git/pr").then((r) => r.url),
+  draft: (body: { paths: string[]; mode: "pr" | "commit"; locale: string } & AiChoice) =>
+    request<{ title: string; body?: string }>("POST", "/api/git/review/draft", body),
   diff: (path: string) =>
     request<{ records: Array<{ key: string; kind: ChangeKind; fields: FieldValues[] }> }>(
       "GET",

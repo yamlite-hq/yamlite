@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, ExternalLink, Trash2, Undo2 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { ChevronRight, ExternalLink, Sparkles, Trash2, Undo2 } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,9 +24,12 @@ import {
   type Reverted,
   undoRevert,
 } from "@/lib/git";
+import { type AiChoice, currentChoice, useAiHost, useAiProviders } from "@/lib/ai";
 import { useMeta } from "@/lib/providers";
 import { cn } from "@/lib/utils";
 import { m } from "@/paraglide/messages.js";
+import { getLocale } from "@/paraglide/runtime.js";
+import { AiInstructionsDialog } from "./AiInstructionsDialog";
 import { FieldDiff } from "./FieldDiff";
 
 const KIND: Record<ChangeKind, () => string> = {
@@ -299,17 +302,49 @@ export function ReviewDialog({
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [branch, setBranch] = useState("");
+  const [instructionsOpen, setInstructionsOpen] = useState(false);
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
   // the set the bulk button was armed for; a different set, as after a refetch, asks again
   const [armedFor, setArmedFor] = useState<string | null>(null);
   const paths = git.changes.map((c) => c.path).filter((p) => !unchecked.has(p));
   const onDefault = git.branch === git.defaultBranch;
   const refresh = () => void client.invalidateQueries({ queryKey: GIT_KEY });
+  const openPr = useQuery({
+    queryKey: [...GIT_KEY, "pr", git.branch],
+    queryFn: gitApi.openPr,
+    enabled: open && !onDefault,
+    staleTime: 30_000,
+  });
+  // an open PR takes the changes as one more commit, so there is no title or description to give it
+  const existingPr = onDefault ? null : (openPr.data ?? null);
+  // until then the description is not offered, since text typed into it could not be sent
+  const prKnown = onDefault || openPr.isSuccess || openPr.isError;
+  // a draft that comes back after the dialog closed belongs to an earlier opening
+  const opening = useRef(0);
+  const providers = useAiProviders();
+  const host = useAiHost();
+  const choice = providers ? currentChoice(providers, { viewerKeys: host?.viewerKeys ?? true }) : null;
+  const draft = useMutation({
+    mutationFn: async (at: number) => {
+      const d = await gitApi.draft({
+        paths,
+        mode: existingPr ? "commit" : "pr",
+        locale: getLocale(),
+        ...(choice as AiChoice),
+      });
+      return { ...d, at };
+    },
+    onSuccess: (d) => {
+      if (d.at !== opening.current) return;
+      setTitle(d.title);
+      if (d.body !== undefined) setBody(d.body);
+    },
+  });
   const send = useMutation({
     mutationFn: () =>
       gitApi.review({
         title: title.trim(),
-        body,
+        body: existingPr ? "" : body,
         paths,
         ...(onDefault && branch.trim() ? { branch: branch.trim() } : {}),
       }),
@@ -332,7 +367,7 @@ export function ReviewDialog({
       refresh();
     },
   });
-  const busy = send.isPending || revert.isPending;
+  const busy = send.isPending || revert.isPending || draft.isPending;
   const chosen = git.changes.filter((c) => !unchecked.has(c.path)).map(revertable);
   const bulk = { records: chosen.flatMap((t) => t.records), files: chosen.flatMap((t) => t.files) };
   const bulkCount = bulk.records.length + bulk.files.length;
@@ -350,6 +385,8 @@ export function ReviewDialog({
     if (!o) {
       send.reset();
       revert.reset();
+      draft.reset();
+      opening.current++;
       setTitle("");
       setBody("");
       setBranch("");
@@ -363,7 +400,7 @@ export function ReviewDialog({
   }, [empty, send.data, onOpenChange]);
   const listTables = new Set(meta?.tables.filter((t) => t.mode === "list").map((t) => t.name));
   const result = send.data;
-  const failure = send.error ?? revert.error;
+  const failure = send.error ?? revert.error ?? draft.error;
   const error = failure instanceof Error ? failure.message : (result?.error ?? null);
   return (
     <Dialog open={open} onOpenChange={close}>
@@ -376,7 +413,26 @@ export function ReviewDialog({
       >
         <DialogHeader>
           <DialogTitle className="text-[18px]">{m.review_title()}</DialogTitle>
-          <DialogDescription className="text-[14px]">{onDefault ? m.review_new() : m.review_add()}</DialogDescription>
+          <DialogDescription className="text-[14px]">
+            {onDefault
+              ? m.review_new()
+              : openPr.isPending
+                ? m.review_add()
+                : existingPr
+                  ? m.review_add_commit()
+                  : m.review_add_open()}
+          </DialogDescription>
+          {existingPr && !result && (
+            <a
+              href={existingPr}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-[14px] font-semibold text-tomato hover:underline"
+            >
+              {m.review_open_pr()}
+              <ExternalLink className="size-4" />
+            </a>
+          )}
         </DialogHeader>
         {result ? (
           <div className="flex flex-col gap-3 text-[15px]">
@@ -427,20 +483,44 @@ export function ReviewDialog({
                 className="font-mono text-[15px]"
               />
             )}
-            <Input
-              aria-label={m.review_pr_title()}
-              placeholder={m.review_pr_title()}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="text-[15px]"
-            />
-            <Textarea
-              aria-label={m.review_pr_body()}
-              placeholder={m.review_pr_body()}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              className="min-h-20 text-[15px]"
-            />
+            <div className="flex gap-2">
+              <Input
+                aria-label={existingPr ? m.review_commit_message() : m.review_pr_title()}
+                placeholder={existingPr ? m.review_commit_message() : m.review_pr_title()}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="text-[15px]"
+              />
+              {choice && (
+                <Button
+                  variant="outline"
+                  disabled={paths.length === 0 || busy || (!onDefault && openPr.isPending)}
+                  onClick={() => draft.mutate(opening.current)}
+                >
+                  <Sparkles className="size-4" />
+                  {draft.isPending ? m.review_drafting() : m.review_draft()}
+                </Button>
+              )}
+            </div>
+            {choice && (
+              <button
+                type="button"
+                className="self-end text-[13.5px] text-muted-foreground underline-offset-2 hover:underline"
+                onClick={() => setInstructionsOpen(true)}
+              >
+                {m.review_edit_instructions()}
+              </button>
+            )}
+            {instructionsOpen && <AiInstructionsDialog open onOpenChange={setInstructionsOpen} />}
+            {prKnown && !existingPr && (
+              <Textarea
+                aria-label={m.review_pr_body()}
+                placeholder={m.review_pr_body()}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                className="min-h-20 text-[15px]"
+              />
+            )}
           </>
         )}
         {error && (
@@ -467,7 +547,10 @@ export function ReviewDialog({
               <Button variant="outline" onClick={() => close(false)}>
                 {m.common_cancel()}
               </Button>
-              <Button disabled={title.trim() === "" || paths.length === 0 || busy} onClick={() => send.mutate()}>
+              <Button
+                disabled={title.trim() === "" || paths.length === 0 || busy || !prKnown}
+                onClick={() => send.mutate()}
+              >
                 {send.isPending ? m.review_sending() : m.review_send()}
               </Button>
             </>

@@ -23,6 +23,7 @@ export {
   type Extracted,
   type HistoryTarget,
 } from "./githistory.ts";
+export { templatePath } from "./git/pr.ts";
 export type { ReviewRequest } from "./git/review.ts";
 export type { Repo } from "./git/repo.ts";
 export type { RunOptions } from "./git/steps.ts";

@@ -815,7 +815,7 @@ test("parseConfig reads where each table's files are from the config text alone"
     ["plain", { kind: "default" }],
   ]);
   expect(parseConfig(text).tables.find((t) => t.name === "teams")?.columns).toEqual({ org: "TEXT" });
-  expect(parseConfig("")).toEqual({ tables: [], pages: [] });
+  expect(parseConfig("")).toEqual({ tables: [], pages: [], ai: { instructions: null, pullRequests: null } });
 });
 
 test("parseConfig keeps page paths as written", () => {
@@ -859,4 +859,23 @@ test("readsFile matches the files a table reads, relative to the config's folder
   expect(readsFile({ kind: "file", path: "./lists/tags.yaml" }, "lists/tags.yaml")).toBe(true);
   expect(readsFile({ kind: "file", path: "lists/tags.yaml" }, "lists/more.yaml")).toBe(false);
   expect(readsFile({ kind: "default" }, "people.yaml")).toBe(false);
+});
+
+test("ai instructions are read from yamlite.yaml, trimmed, and empty ones are none", () => {
+  expect(parseConfig("tables: {}\n").ai).toEqual({ instructions: null, pullRequests: null });
+  const text =
+    "ai:\n  instructions: |\n    Write in English.\n    status todo means not started.\n  pullRequests: '  '\n";
+  expect(parseConfig(text).ai).toEqual({
+    instructions: "Write in English.\nstatus todo means not started.",
+    pullRequests: null,
+  });
+});
+
+test.each([
+  ["ai: [x]\n", "ai must be a map"],
+  ["ai:\n  tone: short\n", 'unknown key "ai.tone"'],
+  ["ai:\n  instructions: 1\n", "ai.instructions must be text"],
+  [`ai:\n  pullRequests: ${"x".repeat(4_001)}\n`, "ai.pullRequests is longer than 4000 characters"],
+])("ai %#: %s", (text, error) => {
+  expect(() => parseConfig(text)).toThrow(error);
 });

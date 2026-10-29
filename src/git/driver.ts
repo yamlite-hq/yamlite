@@ -1,5 +1,5 @@
 import { type DiffResult, type Extract, fileDiff, type HistoryTarget, recordHistory } from "../githistory.ts";
-import { findOpenPr } from "./pr.ts";
+import { findOpenPr, templatePath } from "./pr.ts";
 import {
   currentBranch,
   defaultBranch,
@@ -42,6 +42,10 @@ export interface GitDriver {
     req: ReviewRequest & { target: string | null },
     o: { afterTreeChange: () => Promise<void> },
   ): Promise<ReviewOutcome>;
+  // the open PR a review from the current branch is added to; null when there is none or it cannot be told
+  openPr?(): Promise<string | null>;
+  // the repository's pull request template (see templatePath), which drafted descriptions follow; null when none
+  pullRequestTemplate?(): Promise<string | null>;
   // true: a review from the default branch goes to the branch name the user gives; otherwise the host names it
   readonly namesBranch?: boolean;
   // present where the host can read the default branch; absent: the UI offers no way to put files back as it has them
@@ -203,6 +207,22 @@ export async function localDriver(root: string, gh: () => Promise<string | null>
     },
     history: (t, extract, o) => recordHistory(t, extract, o),
     fileDiff: (t, rev) => fileDiff(t, rev),
+    async openPr() {
+      const f = await lookup();
+      if (!f) return null;
+      const branch = await currentBranch(f.repo);
+      if (branch === null || branch === (await defaultName())) return null;
+      return findOpenPr(f.repo, branch, await gh());
+    },
+    async pullRequestTemplate() {
+      const f = await lookup();
+      if (!f) return null;
+      const listed = await runGit(f.repo.top, ["ls-tree", "--name-only", "HEAD", "--", ".", ".github/", "docs/"]).catch(
+        () => "",
+      );
+      const path = templatePath(listed.split("\n"));
+      return path === null ? null : runGit(f.repo.top, ["show", `HEAD:${path}`]).catch(() => null);
+    },
     async review(req, o) {
       if (req.target !== null) throw new ReviewRefused(400, "this server cannot add to an existing pull request");
       const { repo, steps } = await need();

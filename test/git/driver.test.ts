@@ -120,3 +120,15 @@ test("without a fetched default branch the local driver reads the local one", as
   git(root, "branch", "-q", "-D", "main");
   await expect(d.defaultBranchFiles!.changes()).rejects.toThrow(/default branch main is not in this clone/);
 });
+
+test("the local driver reads the committed pull request template, or none", async () => {
+  const root = dataRoot();
+  withRemote(root);
+  const d = await localDriver(root, async () => null);
+  expect(await d.pullRequestTemplate?.()).toBeNull();
+  mkdirSync(join(root, ".github"), { recursive: true });
+  writeFileSync(join(root, ".github/PULL_REQUEST_TEMPLATE.md"), "## Why\n");
+  expect(await d.pullRequestTemplate?.()).toBeNull();
+  commit(root, "template");
+  expect(await d.pullRequestTemplate?.()).toBe("## Why\n");
+});

@@ -122,6 +122,7 @@ export async function createWorkspace(o: WorkspaceOptions): Promise<Workspace> {
         ...o.ai,
         tools: (id) => agentTools(ctx, id),
         notes: git?.steps ? [GIT_NOTE] : [],
+        instructions: () => y.ai.instructions,
         feedback: (id) => ctx.proposals.takeFeedback(id),
       });
     }

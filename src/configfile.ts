@@ -7,6 +7,7 @@ import {
   isSeq,
   type Node,
   parseDocument,
+  Scalar,
   type YAMLMap,
   type YAMLSeq,
 } from "yaml";
@@ -14,7 +15,7 @@ import { toIndex } from "./config.ts";
 import { writeAtomic } from "./fsutil.ts";
 import { canonical, hashContent } from "./hash.ts";
 import { stringifyOptions } from "./source/yamldoc.ts";
-import type { AllowedValue, Bound, ColumnFormat, ColumnType, IndexSpec } from "./types.ts";
+import type { AiInstructions, AllowedValue, Bound, ColumnFormat, ColumnType, IndexSpec } from "./types.ts";
 
 export interface Registration {
   table: string;
@@ -248,6 +249,38 @@ export function applySchema(text: string, target: RuleTarget, edit: SchemaEdit):
   if (edit.indexes !== undefined) changed = applyIndexes(doc, entry, target.table, edit.indexes) || changed;
   if (edit.views !== undefined) changed = applyViews(doc, entry, edit.views) || changed;
   if (!changed) return null;
+  const padded = /[[{] [^\s\]}]/.test(text);
+  return doc.toString({ ...stringifyOptions(text), flowCollectionPadding: padded });
+}
+
+// Sets yamlite.yaml's ai instructions, keeping everything else; null removes one, and the ai map once it is empty.
+// Several lines are written as a literal block (|). Returns the new text, or null when nothing changes.
+export function applyAiInstructions(text: string, next: AiInstructions): string | null {
+  const doc = parseDocument(text);
+  if (doc.errors.length > 0) throw new Error(`invalid yamlite.yaml: ${doc.errors[0]?.message.split("\n")[0]}`);
+  if (!isMap(doc.contents)) doc.contents = doc.createNode({}) as unknown as typeof doc.contents;
+  const root = doc.contents as unknown as YAMLMap;
+  const current = root.get("ai", true);
+  let changed = false;
+  for (const key of ["instructions", "pullRequests"] as const) {
+    const value = next[key];
+    const before = isMap(current) ? current.get(key) : undefined;
+    if ((before ?? null) === value) continue;
+    changed = true;
+    if (value === null) {
+      if (isMap(current)) current.delete(key);
+      continue;
+    }
+    const scalar = new Scalar(value);
+    if (value.includes("\n")) scalar.type = Scalar.BLOCK_LITERAL;
+    const ai = blockMap(doc, root, "ai");
+    // a literal block cannot sit in a flow map ({ … })
+    if (scalar.type === Scalar.BLOCK_LITERAL) ai.flow = false;
+    ai.set(key, scalar);
+  }
+  if (!changed) return null;
+  const ai = root.get("ai", true);
+  if (isMap(ai) && ai.items.length === 0) root.delete("ai");
   const padded = /[[{] [^\s\]}]/.test(text);
   return doc.toString({ ...stringifyOptions(text), flowCollectionPadding: padded });
 }

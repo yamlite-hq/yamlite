@@ -89,6 +89,8 @@ export interface HostOptions {
   feedback: (conversationId: string) => string[];
   // appended to the preamble
   notes?: string[];
+  // the repository's instructions (yamlite.yaml ai.instructions), read on every turn so an edit applies at once
+  instructions?: () => string | null;
   // keys the host holds itself, by provider id; yamlite serve reads them from the environment
   keys?: Record<string, string>;
   // false: only the host's keys are used; a key sent by the client is refused
@@ -144,6 +146,15 @@ export class AgentHost {
 
   start(input: StartInput): Conversation {
     if (this.closed) throw new HttpError(503, "YAMLite is shutting down");
+    const { provider, model, languageModel } = this.viewerModel(input);
+    const c = new Conversation(randomBytes(8).toString("hex"), provider, model, languageModel);
+    this.evict();
+    this.conversations.set(c.id, c);
+    return c;
+  }
+
+  // the model the viewer chose, with their key or the host's
+  viewerModel(input: StartInput): { provider: string; model: string; languageModel: LanguageModel } {
     const p = providerOf(input.provider);
     if (input.model !== undefined && typeof input.model !== "string")
       throw new HttpError(400, "model must be a string");
@@ -155,10 +166,7 @@ export class AgentHost {
     if (given && !this.viewerKeys) throw new HttpError(400, "this host does not take API keys");
     const apiKey = given || this.opts.keys?.[p.id];
     if (!apiKey) throw new HttpError(400, `an API key for ${p.name} is required`, { code: "no_key" });
-    const c = new Conversation(randomBytes(8).toString("hex"), p.id, model, this.build(p, model, apiKey));
-    this.evict();
-    this.conversations.set(c.id, c);
-    return c;
+    return { provider: p.id, model, languageModel: this.build(p, model, apiKey) };
   }
 
   // the first provider the host holds a key for
@@ -190,6 +198,16 @@ export class AgentHost {
       released = true;
       this.pageInFlight--;
     };
+  }
+
+  private system(search: boolean): string {
+    const own = this.opts.instructions?.();
+    return [
+      PREAMBLE,
+      ...(search ? [WEB_SEARCH_NOTE] : []),
+      ...(this.opts.notes ?? []),
+      ...(own ? [`Instructions from the repository, which override the ones above:\n${own}`] : []),
+    ].join("\n");
   }
 
   private build(p: Provider, model: string, apiKey: string): LanguageModel {
@@ -308,7 +326,7 @@ export class AgentHost {
       ]);
       const r = streamText({
         model: c.model,
-        system: [PREAMBLE, ...(search ? [WEB_SEARCH_NOTE] : []), ...(this.opts.notes ?? [])].join("\n"),
+        system: this.system(search !== undefined),
         messages: [...c.messages],
         tools,
         stopWhen: stepCountIs(this.opts.maxSteps ?? MAX_STEPS),

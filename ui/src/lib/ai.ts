@@ -1,3 +1,4 @@
+import { request } from "./api";
 import { isReadOnly } from "./mode";
 import { useMeta } from "./providers";
 
@@ -83,3 +84,15 @@ export function saveChoice(c: AiChoice, remember: boolean): void {
   }
   store({ provider: c.provider, model: c.model, keys });
 }
+
+// what yamlite.yaml tells the AI features; base is the file's hash, so a save does not write over another edit
+export interface AiInstructions {
+  instructions: string | null;
+  pullRequests: string | null;
+  base: string;
+}
+
+export const instructionsApi = {
+  get: () => request<AiInstructions>("GET", "/api/ai/instructions"),
+  save: (body: AiInstructions) => request<AiInstructions>("PUT", "/api/ai/instructions", body),
+};
