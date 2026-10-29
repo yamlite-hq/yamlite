@@ -1,12 +1,12 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { defaultFilter } from "cmdk";
-import { MIN_QUERY } from "../../../src/serve/search.ts";
+import { isSeparator, MIN_QUERY, squash } from "../../../src/serve/search.ts";
 import { api } from "./api";
 import type { SearchHit } from "./types";
 
 const AROUND = 30;
 
-export const enoughText = (needle: string): boolean => [...needle.trim()].length >= MIN_QUERY;
+export const enoughText = (needle: string): boolean => [...squash(needle.trim())].length >= MIN_QUERY;
 
 export interface SnippetParts {
   before: string;
@@ -17,14 +17,30 @@ export interface SnippetParts {
 // markdown bodies read as prose: line-leading heading, list and quote markers go, whitespace collapses
 const flat = (s: string) => s.replace(/^[ \t]*(?:#{1,6}|[-*+]|>)[ \t]+/gm, "").replace(/\s+/g, " ");
 
+// matched with separators dropped, as the server does, then mapped back to the raw value
+function locate(value: string, needle: string): [number, number] | null {
+  const want = squash(needle.toLowerCase());
+  if (want === "") return null;
+  let flatValue = "";
+  const from: number[] = [];
+  for (let i = 0; i < value.length; i++) {
+    if (isSeparator(value[i])) continue;
+    const low = value[i].toLowerCase();
+    flatValue += low;
+    for (let j = 0; j < low.length; j++) from.push(i);
+  }
+  const at = flatValue.indexOf(want);
+  return at < 0 ? null : [from[at], from[at + want.length - 1] + 1];
+}
+
 // located on the raw value so collapsing whitespace cannot move the match
 export function snippet(value: string, needle: string, around = AROUND): SnippetParts {
-  const at = value.toLowerCase().indexOf(needle.toLowerCase());
-  if (at < 0) {
+  const found = locate(value, needle);
+  if (!found) {
     const head = value.slice(0, around * 2);
     return { before: "", match: "", after: flat(head) + (value.length > head.length ? "…" : "") };
   }
-  const end = at + needle.length;
+  const [at, end] = found;
   const start = Math.max(0, at - around);
   const stop = Math.min(value.length, end + around);
   return {

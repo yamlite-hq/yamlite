@@ -19,12 +19,17 @@ export interface SearchHit {
 }
 
 export const MIN_QUERY = 2;
+
+// ignored on both sides, so mdm06 and "mdm 06" find mdm-06
+const SEPARATORS = [" ", "\t", "\n", "\r", "-", "_", ".", "/"];
+export const isSeparator = (c: string): boolean => SEPARATORS.includes(c);
+export const squash = (s: string): string => [...s].filter((c) => !isSeparator(c)).join("");
 const DEFAULT_PER = 20;
 const MAX_PER = 200;
 
 export function parseSearchQuery(params: URLSearchParams): { needle: string; per: number } {
   const needle = params.get("q")?.trim() ?? "";
-  if ([...needle].length < MIN_QUERY) throw new HttpError(400, `q needs at least ${MIN_QUERY} characters`);
+  if ([...squash(needle)].length < MIN_QUERY) throw new HttpError(400, `q needs at least ${MIN_QUERY} characters`);
   const raw = params.get("per");
   if (raw === null) return { needle, per: DEFAULT_PER };
   const n = Number(raw);
@@ -47,7 +52,9 @@ function labelColumn(t: SearchTable): string | null {
 
 const literal = (s: string) => `'${s.replaceAll("'", "''")}'`;
 const text = (column: string) => `CAST(${q(column)} AS TEXT)`;
-const contains = (column: string) => `instr(lower(${text(column)}), needle.v) > 0`;
+const char = (c: string) => (c < " " ? `char(${c.charCodeAt(0)})` : literal(c));
+const squashed = (expr: string) => SEPARATORS.reduce((e, c) => `replace(${e}, ${char(c)}, '')`, `lower(${expr})`);
+const contains = (column: string) => `instr(${squashed(text(column))}, needle.v) > 0`;
 
 // one SELECT per table; the key column first so a key match is the one reported;
 // main. keeps a table named like one of the statement's CTEs from resolving to the CTE
@@ -60,7 +67,7 @@ function tableHits(t: SearchTable): string | null {
     `CASE ${columns.map((c) => `WHEN ${contains(c)} THEN ${then(c)}`).join(" ")} END`;
   const label = labelColumn(t);
   return (
-    `SELECT ${literal(t.name)} AS tbl, ${text(t.key)} AS k, ${label ? text(label) : "NULL"} AS lbl, ` +
+    `SELECT ${literal(t.name)} AS tbl, ${text(t.key)} AS k, ${squashed(text(t.key))} AS sk, ${label ? text(label) : "NULL"} AS lbl, ` +
     `${pick(literal)} AS col, ${pick(text)} AS val ` +
     `FROM main.${q(t.name)}, needle WHERE ${columns.map(contains).join(" OR ")}`
   );
@@ -74,13 +81,13 @@ export function buildSearchSql(
 ): { sql: string; params: DbValue[] } | null {
   const selects = tables.map(tableHits).filter((s): s is string => s !== null);
   if (selects.length === 0) return null;
-  const sql = `WITH needle(v) AS (SELECT lower(?)),
+  const sql = `WITH needle(v) AS (SELECT ${squashed("?")}),
 hits AS (${selects.join(" UNION ALL ")}),
 ranked AS (
   SELECT hits.*,
-    CASE WHEN lower(k) = needle.v THEN 0
-         WHEN substr(lower(k), 1, length(needle.v)) = needle.v THEN 1
-         WHEN instr(lower(k), needle.v) > 0 THEN 2
+    CASE WHEN sk = needle.v THEN 0
+         WHEN substr(sk, 1, length(needle.v)) = needle.v THEN 1
+         WHEN instr(sk, needle.v) > 0 THEN 2
          ELSE 3 END AS grade,
     count(*) OVER (PARTITION BY tbl) AS total
   FROM hits, needle
