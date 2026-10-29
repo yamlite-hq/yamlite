@@ -8,10 +8,11 @@ async function run() {
   const { init, open, check, query } = await import("../../src/index.ts");
   stage = "sqlite-wasm and OPFS";
   const sqlite = await import("node:sqlite");
-  stage = "sync";
-  const { opfs } = sqlite as unknown as {
-    opfs: { getFileNames(): string[]; wipeFiles(): Promise<void>; unlink(name: string): boolean };
+  const { installOpfs } = sqlite as unknown as {
+    installOpfs(): Promise<{ getFileNames(): string[]; wipeFiles(): Promise<void>; unlink(name: string): boolean }>;
   };
+  const opfs = await installOpfs();
+  stage = "sync";
   await opfs.wipeFiles();
   const shim = fs as unknown as {
     onRemove(fn: (path: string) => void): void;
