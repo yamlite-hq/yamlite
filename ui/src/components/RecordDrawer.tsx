@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { EditorView } from "@codemirror/view";
 import CodeMirror from "@uiw/react-codemirror";
-import { ArrowLeft, Trash2, X } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { fieldLabel } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
@@ -13,11 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiError, api } from "@/lib/api";
 import { buildPatch, changedFields } from "@/lib/form";
 import { cn } from "@/lib/utils";
-import { usePanelWidth } from "@/lib/panelWidth";
-import { PanelResizeHandle } from "./PanelResizeHandle";
 import { isReadOnly } from "@/lib/mode";
 import { useIsMobile } from "@/lib/useIsMobile";
-import { useViewportHeight } from "@/lib/viewportHeight";
 import { useEvents, useReflectDispatch } from "@/lib/providers";
 import { useTheme } from "@/lib/theme";
 import { historyCount, restoreDraft, useRecordHistory } from "@/lib/recordHistory";
@@ -25,6 +22,7 @@ import type { AllowedValue, Bound, ColumnFormat, ColumnType, RecordDetail, Row, 
 import { FormField } from "./FormField";
 import { RecordHistory } from "./RecordHistory";
 import { ReflectBadge } from "./ReflectBadge";
+import { SidePanel, SidePanelFooter, SidePanelHeader } from "./SidePanel";
 import { StaleDialog } from "./StaleDialog";
 import { m } from "@/paraglide/messages.js";
 
@@ -39,10 +37,14 @@ const columnValues = (table: TableMeta, field: string): AllowedValue[] | undefin
 const columnBound = (bounds: Record<string, Bound>, field: string): Bound | undefined =>
   Object.hasOwn(bounds, field) ? bounds[field] : undefined;
 
-// laid over the table, so opening a record does not reflow the page under it; a phone gives it the whole screen
-export const panel =
-  "absolute inset-y-0 right-0 z-20 border-l bg-background shadow-xl max-md:fixed max-md:inset-0 max-md:z-40 max-md:h-dvh max-md:border-l-0 max-md:shadow-none max-md:animate-[y-slide-up_160ms_ease-out]";
-const tabTrigger = "max-md:flex-1 max-md:text-[14px]";
+// the record and view-row drawers share one width; other layers find them by data-record-drawer
+export const drawer = {
+  layout: "overlay",
+  widthKey: "yamlite-drawer-width",
+  defaultWidth: 360,
+  "data-record-drawer": "",
+} as const;
+const tabTrigger = "flex-1 text-[14px]";
 
 // Escape or a click elsewhere closes the drawer, unless that would throw away unsaved edits
 export function useDismiss(close: () => void, enabled = true) {
@@ -114,10 +116,7 @@ export function RecordDrawer({
   // bumped when the form is reloaded from outside, so every field remounts with fresh state
   const [version, setVersion] = useState(0);
   const dirty = base !== null && draft !== null && changedFields(base, draft).length > 0;
-  const [width, setWidth] = usePanelWidth("yamlite-drawer-width", 360);
   const mobile = useIsMobile();
-  const viewportHeight = useViewportHeight(mobile);
-  const size = mobile ? (viewportHeight ? { height: viewportHeight } : undefined) : { width };
 
   // a refetch (the file changed, or our own save came back) replaces the form only when nothing is being edited
   useEffect(() => {
@@ -204,13 +203,13 @@ export function RecordDrawer({
 
   if (error) {
     return (
-      <aside data-record-drawer aria-label={m.record_label()} className={cn(panel, "p-4 text-err")} style={size}>
+      <SidePanel {...drawer} resizeLabel={m.record_resize()} aria-label={m.record_label()} className="p-4 text-err">
         {error.message}
-      </aside>
+      </SidePanel>
     );
   }
   if (!draft || !base || !data)
-    return <aside data-record-drawer aria-label={m.record_label()} className={panel} style={size} />;
+    return <SidePanel {...drawer} resizeLabel={m.record_resize()} aria-label={m.record_label()} />;
 
   const fields = Object.keys(table.columns).filter((c) => c !== table.key);
   const extra = Object.keys(draft).filter((c) => c !== table.key && !fields.includes(c));
@@ -219,8 +218,7 @@ export function RecordDrawer({
   const count = historyCount(history.data?.pages);
 
   return (
-    <aside data-record-drawer aria-label={m.record_label()} className={cn(panel, "flex flex-col")} style={size}>
-      {!mobile && <PanelResizeHandle width={width} label={m.record_resize()} onResize={setWidth} />}
+    <SidePanel {...drawer} resizeLabel={m.record_resize()} aria-label={m.record_label()}>
       <Tabs
         value={tab}
         onValueChange={(next) => {
@@ -231,21 +229,15 @@ export function RecordDrawer({
         }}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b px-4 py-3 max-md:gap-1 max-md:px-2 max-md:pt-[calc(0.5rem+env(safe-area-inset-top))] max-md:pb-2">
-          {mobile && (
-            <button
-              type="button"
-              aria-label={m.common_close_lower()}
-              onClick={close}
-              className="grid size-10 place-items-center"
-            >
-              <ArrowLeft className="size-5" />
-            </button>
-          )}
-          {/* a narrow panel moves the tabs to their own line rather than cut the key down to one letter */}
-          <span className="min-w-[6rem] flex-1 truncate font-mono font-bold">{recordKey}</span>
+        <SidePanelHeader onClose={close}>
+          <span className="min-w-0 flex-1 truncate font-mono font-bold" title={recordKey}>
+            {recordKey}
+          </span>
           {headerActions}
-          <TabsList className="ml-auto h-7 max-md:order-last max-md:ml-0 max-md:h-9 max-md:w-full">
+        </SidePanelHeader>
+        {/* the tabs keep a line of their own, so the header matches the AI panel's and the key keeps its room */}
+        <div className="border-b px-3.5 py-2">
+          <TabsList className="h-9 w-full">
             <TabsTrigger value="form" className={tabTrigger}>
               {m.record_tab_form()}
             </TabsTrigger>
@@ -258,19 +250,12 @@ export function RecordDrawer({
             {!isReadOnly() && (
               <TabsTrigger value="history" className={tabTrigger}>
                 {m.record_tab_history()}
-                {count !== null && <span className="ml-1 font-mono text-[10px] text-muted-foreground">{count}</span>}
+                {count !== null && <span className="ml-1 font-mono text-[12px] text-muted-foreground">{count}</span>}
               </TabsTrigger>
             )}
           </TabsList>
-          {!mobile && (
-            <button type="button" aria-label={m.common_close_lower()} onClick={close} className="text-muted-foreground">
-              <X className="size-4" />
-            </button>
-          )}
         </div>
-        <div className="truncate px-4 pt-3 font-mono text-[11px] text-muted-foreground max-md:text-[12px]">
-          {data.file}
-        </div>
+        <div className="truncate px-4 pt-3 font-mono text-[13px] text-muted-foreground">{data.file}</div>
         <TabsContent
           value="form"
           className="min-h-0 flex-1 overflow-auto px-4 py-3"
@@ -281,7 +266,7 @@ export function RecordDrawer({
             e.target.scrollIntoView?.({ block: "center" })
           }
         >
-          {!connected && <p className="mb-2 text-[11.5px] text-err">{m.record_disconnected()}</p>}
+          {!connected && <p className="mb-2 text-[13px] text-err">{m.record_disconnected()}</p>}
           <fieldset disabled={!editable} className="m-0 min-w-0 border-0 p-0">
             {[...fields, ...extra].map((f) => {
               const reference = table.references.find((r) => r.column === f);
@@ -363,10 +348,10 @@ export function RecordDrawer({
               }
             }}
           />
-          {jsonError && <p className="mt-1 text-[11px] text-err">{jsonError}</p>}
+          {jsonError && <p className="mt-1 text-[13px] text-err">{jsonError}</p>}
         </TabsContent>
         <TabsContent value="yaml" className="min-h-0 flex-1 overflow-auto px-4 py-3">
-          {data.yamlError && <p className="mb-2 text-[11.5px] text-err">{data.yamlError}</p>}
+          {data.yamlError && <p className="mb-2 text-[13px] text-err">{data.yamlError}</p>}
           <CodeMirror
             aria-label={m.record_file()}
             value={data.yaml ?? "# not written to a file yet"}
@@ -390,8 +375,8 @@ export function RecordDrawer({
         )}
       </Tabs>
       {!isReadOnly() && (
-        <div className="flex items-center gap-2 border-t px-4 py-2.5 max-md:flex-wrap max-md:pb-[calc(0.625rem+env(safe-area-inset-bottom))]">
-          <span className="mr-auto flex min-w-0 flex-col text-[11px] text-muted-foreground max-md:basis-full max-md:text-[12px]">
+        <SidePanelFooter className="max-md:flex-wrap">
+          <span className="mr-auto flex min-w-0 flex-col text-[13px] text-muted-foreground max-md:basis-full">
             {changes > 0 ? (
               restoredFrom ? (
                 m.record_restored({ from: restoredFrom, count: changes })
@@ -426,7 +411,7 @@ export function RecordDrawer({
           >
             {mobile ? m.common_save() : m.record_save_shortcut()}
           </Button>
-        </div>
+        </SidePanelFooter>
       )}
       {stale && (
         <StaleDialog
@@ -478,6 +463,6 @@ export function RecordDrawer({
           </DialogContent>
         </Dialog>
       )}
-    </aside>
+    </SidePanel>
   );
 }

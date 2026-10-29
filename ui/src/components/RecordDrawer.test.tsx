@@ -369,7 +369,7 @@ test("fills the screen on a phone, without a resize handle, and the back button 
   expect(panel.style.width).toBe("");
   expect(screen.queryByRole("separator")).toBeNull();
   expect(screen.getByRole("button", { name: "Save" }).textContent).not.toContain("⌘");
-  fireEvent.click(screen.getByRole("button", { name: "close" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
   expect(onClose).toHaveBeenCalled();
 });
 
