@@ -34,9 +34,12 @@ export function snippet(value: string, needle: string, around = AROUND): Snippet
   };
 }
 
+// cmdk's score grows superlinearly with length, so a long markdown body froze the UI; a match beyond this scores near 0 anyway
+const SCORED = 200;
+
 // SQL ranks by how the key matches; cmdk's fuzzy score only breaks ties within a rank
 export function rankHits(hits: SearchHit[], needle: string): SearchHit[] {
-  const score = new Map(hits.map((h) => [h, defaultFilter(h.value, needle)]));
+  const score = new Map(hits.map((h) => [h, defaultFilter(h.value.slice(0, SCORED), needle)]));
   return [...hits].sort(
     (a, b) =>
       a.rank - b.rank ||
