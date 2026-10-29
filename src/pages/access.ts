@@ -5,8 +5,13 @@ export interface PageRules {
   access: Record<string, PageAccess>;
   sql: boolean;
   network: string[];
+  // root-relative folders (ending in /) and files the page may read
+  files: string[];
   ai: { maxOutputTokens: number } | null;
 }
+
+export const DENIED_FILES = [".yamlite/", "yamlite.yaml", "yamlite.yml"];
+export const MAX_PAGE_FILE_BYTES = 10_485_760;
 
 export const PAGE_AI_DEFAULT_TOKENS = 1024;
 export const PAGE_AI_MAX_TOKENS = 8192;
@@ -32,6 +37,39 @@ export function trustedViews(page: PageRules, views: ReadonlyArray<{ name: strin
   return trusted;
 }
 
+// "a//./b" becomes "a/b"; null for absolute, empty or ..-containing paths. String ops only: the UI imports this module
+export function normalizeFilePath(path: string): string | null {
+  if (path.startsWith("/") || path.startsWith("\\") || /^[a-z]:/i.test(path)) return null;
+  const parts = path.split(/[\\/]/);
+  if (parts.includes("..")) return null;
+  const kept = parts.filter((p) => p !== "" && p !== ".");
+  if (kept.length === 0) return null;
+  return kept.join("/") + (path.endsWith("/") ? "/" : "");
+}
+
+// `path` is already normalized; a folder entry ends in /, anything else is one exact file
+export const fileGranted = (files: string[], path: string): boolean =>
+  files.some((entry) => (entry.endsWith("/") ? path.startsWith(entry) : path === entry));
+
+export const deniedFile = (path: string, denied: string[]): boolean => fileGranted(denied, path);
+
+// only types that are safe to serve back as-is; anything else, html included, is a download
+const CONTENT_TYPES: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  svg: "image/svg+xml",
+  pdf: "application/pdf",
+  txt: "text/plain",
+};
+
+export function contentTypeOf(path: string): string {
+  const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
+  return path.includes(".") && Object.hasOwn(CONTENT_TYPES, ext) ? CONTENT_TYPES[ext]! : "application/octet-stream";
+}
+
 export function pageCsp(network: string[]): string {
   const extra = network.map((o) => ` ${o}`).join("");
   return [
@@ -50,6 +88,7 @@ export function accessSummary(page: PageRules): string {
   const parts = Object.entries(page.access).map(([name, level]) => `${name}: ${level}`);
   if (page.sql) parts.push("sql");
   for (const origin of page.network) parts.push(new URL(origin).host);
+  if (page.files.length > 0) parts.push(`files: ${page.files.join(", ")}`);
   if (page.ai) parts.push("AI");
   return parts.length > 0 ? parts.join(" · ") : "no access";
 }
@@ -65,6 +104,8 @@ export function accessBrief(page: PageRules): string {
   if (page.sql) parts.push("SQL");
   const n = page.network.length;
   if (n > 0) parts.push(`${n} ${n === 1 ? "origin" : "origins"}`);
+  const f = page.files.length;
+  if (f > 0) parts.push(`${f} ${f === 1 ? "file entry" : "file entries"}`);
   if (page.ai) parts.push("AI");
   return parts.length > 0 ? parts.join(" · ") : "no access";
 }

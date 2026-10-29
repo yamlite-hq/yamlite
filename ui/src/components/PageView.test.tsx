@@ -32,6 +32,7 @@ const snapshot: Snapshot = {
         access: { tasks: "write" },
         sql: true,
         network: ["https://cdn.example.com"],
+        files: [],
         ai: null,
       },
     ],

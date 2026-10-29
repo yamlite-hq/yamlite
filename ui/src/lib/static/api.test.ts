@@ -117,6 +117,7 @@ const snapshot: Snapshot = {
         access: { tasks: "read" },
         sql: true,
         network: [],
+        files: [],
         ai: null,
       },
       {
@@ -126,6 +127,7 @@ const snapshot: Snapshot = {
         access: { tasks: "read" },
         sql: false,
         network: [],
+        files: [],
         ai: null,
       },
     ],
