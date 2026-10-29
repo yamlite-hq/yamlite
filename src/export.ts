@@ -19,7 +19,7 @@ import { configPath } from "./config.ts";
 import { q } from "./ident.ts";
 import { withScratch } from "./scratch.ts";
 import { Store } from "./store.ts";
-import { type ApiContext, displayPath } from "./serve/context.ts";
+import { type ApiContext, deniedFiles, displayPath } from "./serve/context.ts";
 import { EventHub } from "./serve/events.ts";
 import { PageSql } from "./serve/pagesql.ts";
 import { Router, withBase } from "./serve/http.ts";
@@ -151,6 +151,8 @@ export async function writeSnapshotData(opts: {
         agent: null,
         git: null,
         reloadConfig: () => {},
+        pageFiles: null,
+        deniedFiles: deniedFiles(root, stateDir, dbPath),
         proposals: new ProposalStore({
           store,
           dry: store,

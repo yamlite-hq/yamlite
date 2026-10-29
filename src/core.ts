@@ -4,7 +4,13 @@ export { type Config, CONFIG_NAMES, type DeclaredTable, parseConfig, readsFile, 
 export { DENIED_FILES, fileGranted, MAX_PAGE_FILE_BYTES, normalizeFilePath } from "./pages/access.ts";
 export type { Capture } from "./types.ts";
 export type { Credentials } from "./agent/providers.ts";
-export { type AiOptions, createWorkspace, type Workspace, type WorkspaceOptions } from "./serve/workspace.ts";
+export {
+  type AiOptions,
+  createWorkspace,
+  type PageFileResult,
+  type Workspace,
+  type WorkspaceOptions,
+} from "./serve/workspace.ts";
 export type { ApiContext } from "./serve/context.ts";
 export { HttpError } from "./serve/errors.ts";
 export {

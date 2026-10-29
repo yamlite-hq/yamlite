@@ -112,6 +112,8 @@ export function realpathSync(p: string): string {
   get(abs(p), "realpath");
   return abs(p);
 }
+// no symlinks and one case here, so the native variant is the same
+realpathSync.native = realpathSync;
 
 export function readFileSync(p: string, opts?: string | { encoding?: string }) {
   const path = abs(p);

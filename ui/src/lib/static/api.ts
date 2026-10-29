@@ -147,6 +147,7 @@ export function createStaticApi(opts: {
         return select(sql);
       }),
     pageHtml: (name) => guard(() => opts.loadPage(name)),
+    pageFile: () => Promise.reject(new ApiError(404, "no files in a snapshot", {})) as Promise<Blob>,
     pageSql: (name, sql) =>
       guard((): SqlResult => {
         const spec = meta.pages.find((p) => p.name === name);

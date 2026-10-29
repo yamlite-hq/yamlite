@@ -51,7 +51,12 @@ export function normalizeFilePath(path: string): string | null {
 export const fileGranted = (files: string[], path: string): boolean =>
   files.some((entry) => (entry.endsWith("/") ? path.startsWith(entry) : path === entry));
 
-export const deniedFile = (path: string, denied: string[]): boolean => fileGranted(denied, path);
+// case-insensitive: on macOS and Windows "Yamlite.yaml" is the same file as "yamlite.yaml"
+export const deniedFile = (path: string, denied: string[]): boolean =>
+  fileGranted(
+    denied.map((d) => d.toLowerCase()),
+    path.toLowerCase(),
+  );
 
 // only types that are safe to serve back as-is; anything else, html included, is a download
 const CONTENT_TYPES: Record<string, string> = {

@@ -118,6 +118,12 @@ test("deniedFile matches nested folders and exact files", () => {
   expect(deniedFile("docs/a.png", DENIED_FILES)).toBe(false);
 });
 
+test("deniedFile ignores case, as a case-insensitive disk would", () => {
+  expect(deniedFile("Yamlite.yaml", DENIED_FILES)).toBe(true);
+  expect(deniedFile(".YAMLITE/db.sqlite", DENIED_FILES)).toBe(true);
+  expect(deniedFile("data/.yamlite/db.sqlite", ["Data/.Yamlite/"])).toBe(true);
+});
+
 test("contentTypeOf goes by extension, case-insensitively", () => {
   expect(contentTypeOf("A.PNG")).toBe("image/png");
   expect(contentTypeOf("x.bin")).toBe("application/octet-stream");

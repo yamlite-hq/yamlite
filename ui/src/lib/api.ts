@@ -177,6 +177,15 @@ export function rowsQuery(p: RowsParams): URLSearchParams {
   return qs;
 }
 
+// bytes, not JSON: only an error is read as an answer
+async function fetchPageFile(name: string, path: string): Promise<Blob> {
+  const res = await transport().fetch(`/api/pages/${enc(name)}/file?path=${encodeURIComponent(path)}`, {
+    credentials: "same-origin",
+  });
+  if (!res.ok) await answer(res);
+  return res.blob();
+}
+
 export const httpApi = {
   meta: () => request<Meta>("GET", "/api/meta"),
   rows: (table: string, p: RowsParams) => request<RowsPage>("GET", `${rowsPath(table)}?${rowsQuery(p)}`),
@@ -212,6 +221,7 @@ export const httpApi = {
   saveRules: (target: RuleTarget, rules: Rules, base: string, edit: SchemaEdit = {}) =>
     request<RulesPreview & { base: string }>("PUT", "/api/rules", { target, rules, base, ...edit }),
   pageHtml: (name: string) => request<{ html: string }>("GET", `/api/pages/${enc(name)}/html`).then((r) => r.html),
+  pageFile: (name: string, path: string) => fetchPageFile(name, path),
   pageSql: (name: string, sql: string) => request<SqlResult>("POST", "/api/sql", { sql, page: name }),
   pageAi: (name: string, body: PageAiInput, signal?: AbortSignal) =>
     postPageAi(`/api/pages/${enc(name)}/ai`, body, signal).then((res) =>
@@ -257,6 +267,7 @@ export const api: Api = {
   saveRules: (t, r, b, e) => backend.saveRules(t, r, b, e),
   sql: (sql) => backend.sql(sql),
   pageHtml: (name) => backend.pageHtml(name),
+  pageFile: (name, path) => backend.pageFile(name, path),
   pageSql: (name, sql) => backend.pageSql(name, sql),
   pageAi: (name, body, signal) => backend.pageAi(name, body, signal),
   pageAiStream: (name, body, signal) => backend.pageAiStream(name, body, signal),

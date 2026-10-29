@@ -102,6 +102,21 @@ test("pageAi answers with the server's body", async () => {
   });
 });
 
+test("pageFile reads the body as a Blob of the served type, and an error as an ApiError", async () => {
+  const png = new Uint8Array([0x89, 0x50, 0xff, 0xfe]);
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(new Response(png, { headers: { "content-type": "image/png" } }))
+    .mockResolvedValueOnce(reply(403, { error: "x is not in this page's files" }));
+  await withFetch(fetcher, async () => {
+    const blob = await httpApi.pageFile("board", ".evidence/a b.png");
+    expect(blob.type).toBe("image/png");
+    expect([...new Uint8Array(await blob.arrayBuffer())]).toEqual([...png]);
+    await expect(httpApi.pageFile("board", "x")).rejects.toMatchObject({ status: 403 });
+  });
+  expect(fetcher.mock.calls[0]?.[0]).toBe("/api/pages/board/file?path=.evidence%2Fa%20b.png");
+});
+
 test("pageAiStream yields deltas split anywhere across chunks, skipping pings, until done", async () => {
   const fetcher = vi
     .fn<typeof fetch>()

@@ -63,6 +63,15 @@ test("a call posts a request and resolves with the parent's answer", async () =>
   await expect(p).resolves.toEqual({ rows: [], total: 0 });
 });
 
+test("file asks the parent for a path and resolves with its Blob", async () => {
+  const f = fake();
+  const p = f.yamlite.file("a.png");
+  expect(f.sent.at(-1)).toEqual({ yamlite: 1, id: 2, method: "file", args: ["a.png"] });
+  const blob = new Blob([new Uint8Array([1, 2])], { type: "image/png" });
+  f.reply({ yamlite: 1, id: 2, ok: true, value: blob });
+  await expect(p).resolves.toBe(blob);
+});
+
 test("an error answer rejects with a YamliteError carrying status and extra", async () => {
   const f = fake();
   const p = f.yamlite.update("tasks", "a", { status: "done" }, { status: "todo" });

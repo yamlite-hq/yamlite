@@ -56,12 +56,22 @@ test("files entries stay as written and default to none", () => {
   expect(pagesOf("pages:\n  board:\n    path: b.html\n    files: [data/]\n")[0]?.files).toEqual(["data/"]);
 });
 
-test.each(["'/abs/'", "''", "a/../b", "./a", "a/./b", ".yamlite/", ".yamlite/x", "yamlite.yaml", "yamlite.yml", "3"])(
-  "rejects the files entry %s",
-  (entry) => {
-    expect(() => pagesOf(`pages:\n  board:\n    path: b.html\n    files: [${entry}]\n`)).toThrow('page "board": files');
-  },
-);
+test.each([
+  "'/abs/'",
+  "''",
+  "a/../b",
+  "./a",
+  "a/./b",
+  ".yamlite/",
+  ".yamlite/x",
+  "yamlite.yaml",
+  "yamlite.yml",
+  "Yamlite.yaml",
+  ".YAMLITE/x",
+  "3",
+])("rejects the files entry %s", (entry) => {
+  expect(() => pagesOf(`pages:\n  board:\n    path: b.html\n    files: [${entry}]\n`)).toThrow('page "board": files');
+});
 
 test("rejects files that is not a list", () => {
   expect(() => pagesOf("pages:\n  board:\n    path: b.html\n    files: x\n")).toThrow('page "board": files');

@@ -1,8 +1,10 @@
-import { relative } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { AgentHost } from "../agent/host.ts";
 import type { ProposalStore } from "../agent/proposals.ts";
 import type { GitDriver } from "../git/driver.ts";
 import type { Yamlite } from "../index.ts";
+import { DENIED_FILES } from "../pages/access.ts";
 import type { Store } from "../store.ts";
 import type { Reference, TableSpec, ViewRecord } from "../types.ts";
 import { declaredViews } from "../views.ts";
@@ -10,6 +12,7 @@ import type { EventHub } from "./events.ts";
 import { HttpError } from "./http.ts";
 import type { PageSql } from "./pagesql.ts";
 import type { MetaReference } from "./types.ts";
+import type { WorkspaceOptions } from "./workspace.ts";
 
 export interface ApiContext {
   y: Yamlite;
@@ -28,6 +31,41 @@ export interface ApiContext {
   git: GitDriver | null;
   // applies yamlite.yaml now, after a route wrote it
   reloadConfig: () => void;
+  // a host's own source for page files, asked before the working tree
+  pageFiles: WorkspaceOptions["pageFiles"] | null;
+  // root-relative paths no page may read, whatever its files say
+  deniedFiles: string[];
+}
+
+// the path as the disk spells it (symlinks followed, true case); one not created yet is resolved through its folder
+function onDisk(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    try {
+      return join(realpathSync.native(dirname(path)), basename(path));
+    } catch {
+      return path;
+    }
+  }
+}
+
+// the state folder and the database are denied too when they sit inside the root; spelled as the route's real paths are.
+// A symlinked database is denied under the name given and the file it resolves to, since SQLite keeps its sidecars by the latter
+export function deniedFiles(root: string, stateDir: string, dbPath: string): string[] {
+  const base = onDisk(root);
+  const inside = (path: string) => {
+    const rel = relative(base, path);
+    return rel === "" || rel.startsWith("..") || isAbsolute(rel) ? null : rel.split(sep).join("/");
+  };
+  const state = inside(onDisk(stateDir));
+  const given = inside(join(onDisk(dirname(dbPath)), basename(dbPath)));
+  const dbs = [...new Set([given, inside(onDisk(dbPath))])].filter((db) => db !== null);
+  return [
+    ...DENIED_FILES,
+    ...(state === null ? [] : [`${state}/`]),
+    ...dbs.flatMap((db) => [db, `${db}-wal`, `${db}-shm`, `${db}-journal`]),
+  ];
 }
 
 // relative to the root when inside it (--db and listed tables may live elsewhere)
