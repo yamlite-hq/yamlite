@@ -51,6 +51,12 @@ test("rankHits orders by rank, then fuzzy score, then table and key", () => {
   expect(rankHits(hits, "alpha").map((h) => h.key)).toEqual(["alpha", "alphabet", "x1", "x2"]);
 });
 
+test("rankHits stays fast on long values", { timeout: 1000 }, () => {
+  const body = "lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(1000);
+  const hits = [hit({ key: "x1", value: body }), hit({ key: "x2", value: body })];
+  expect(rankHits(hits, "lorem ipsum").map((h) => h.key)).toEqual(["x1", "x2"]);
+});
+
 test("groupHits orders tables by their best hit and keeps totals", () => {
   const hits = [
     hit({ table: "tasks", key: "t1", rank: 3, value: "about alpha", total: 4 }),
