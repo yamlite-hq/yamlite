@@ -11,7 +11,8 @@ self.onmessage = async (e: MessageEvent<{ port: MessagePort } | { read: string }
   }
   const { init, createWorkspace } = await import("../../src/core.ts");
   const { expose } = await import("../../src/browser/expose.ts");
-  const { opfs } = (await import("node:sqlite")) as unknown as { opfs: Opfs };
+  const { installOpfs } = (await import("node:sqlite")) as unknown as { installOpfs(): Promise<Opfs> };
+  const opfs = await installOpfs();
   await opfs.wipeFiles();
   const shim = fs as unknown as {
     onRemove(fn: (path: string) => void): void;

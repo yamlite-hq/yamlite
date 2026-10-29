@@ -1,15 +1,21 @@
 // node:sqlite's DatabaseSync, as much of it as yamlite uses, on sqlite-wasm; the browser build aliases node:sqlite here.
-// In a browser worker the files live in OPFS (the SAH pool VFS); registerVfs picks another one.
+// In a browser worker the files live in OPFS once installOpfs has run; registerVfs picks another VFS.
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
 
 // oxlint-disable-next-line typescript/no-explicit-any
 export const sqlite3: any = await sqlite3InitModule();
-const inBrowser = typeof (globalThis as { FileSystemHandle?: unknown }).FileSystemHandle !== "undefined";
-// oxlint-disable-next-line typescript/no-explicit-any
-export const opfs: any = inBrowser ? await sqlite3.installOpfsSAHPoolVfs({ name: "yamlite" }) : null;
-let VFS: string | undefined = opfs?.vfsName;
+let VFS: string | undefined;
 export function registerVfs(name: string): void {
   VFS = name;
+}
+
+// The SAH pool keeps every file in it open, so one worker at a time may use a pool: a page that runs several
+// workers at once gives each its own name. The pool's files are kept in OPFS under ".<name>"
+// oxlint-disable-next-line typescript/no-explicit-any
+export async function installOpfs(name = "yamlite"): Promise<any> {
+  const pool = await sqlite3.installOpfsSAHPoolVfs({ name });
+  VFS = pool.vfsName;
+  return pool;
 }
 const { capi, oo1 } = sqlite3;
 
