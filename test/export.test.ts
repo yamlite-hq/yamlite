@@ -1,11 +1,11 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { expect, test } from "vitest";
 import { exportSite, warningScrubber, writeSnapshotData } from "../src/export.ts";
 import { acquireLock } from "../src/lock.ts";
 import { startServe } from "./serve/helpers.ts";
-import { dataRoot, tmpRoot, write } from "./helpers.ts";
+import { browserFs, dataRoot, tmpRoot, write } from "./helpers.ts";
 
 const files = {
   "yamlite.yaml":
@@ -422,6 +422,7 @@ test("pages are written next to the data, and pages that cannot be exported are 
       access: { projects: "read", projects__milestones: "read" },
       sql: false,
       network: [],
+      files: [],
       ai: null,
     },
   ]);
@@ -468,4 +469,91 @@ test("a files table outside the root keeps only its folder name in the files pat
   expect(table("inbox").files).toBe(`${basename(outside)}/*.yaml`);
   expect(snap.schemas.inbox.files).toBe(`${basename(outside)}/*.yaml`);
   expect(table("notes").files).toBe("notes/**/*.{yaml,yml}");
+});
+
+const PNG = "\x89PNG-bytes";
+
+function pageFilesRoot(extra: Record<string, string> = {}) {
+  return setup({
+    "yamlite.yaml":
+      files["yamlite.yaml"] +
+      "pages:\n  board:\n    path: .pages/board.html\n    access: { projects: read }\n    files: [.evidence/, docs/readme.txt]\n" +
+      "  people-page:\n    path: .pages/people.html\n    access: { people: read }\n    files: [.people-only/]\n",
+    ".pages/board.html": "<p>board</p>",
+    ".pages/people.html": "<p>people</p>",
+    ".evidence/a.png": PNG,
+    ".evidence/sub/b.txt": "b",
+    ".evidence-private/s.png": "secret",
+    "docs/readme.txt": "readme",
+    "docs/other.txt": "other",
+    ".people-only/p.png": "p",
+    ...extra,
+  });
+}
+
+test("files a page grants are copied under data/files with a .bin suffix, and nothing else is", async () => {
+  const root = pageFilesRoot();
+  const dir = tmpRoot();
+  await writeSnapshotData({ root, dir, tables: ["projects"] });
+  expect(readFileSync(join(dir, "data/files/.evidence/a.png.bin"), "utf8")).toBe(PNG);
+  expect(readFileSync(join(dir, "data/files/.evidence/sub/b.txt.bin"), "utf8")).toBe("b");
+  expect(readFileSync(join(dir, "data/files/docs/readme.txt.bin"), "utf8")).toBe("readme");
+  const copied = Object.keys(tree(join(dir, "data/files"))).sort();
+  expect(copied).toEqual([".evidence/a.png.bin", ".evidence/sub/b.txt.bin", "docs/readme.txt.bin"]);
+});
+
+test("a skipped page's files are not copied", async () => {
+  const root = pageFilesRoot();
+  const dir = tmpRoot();
+  await writeSnapshotData({ root, dir, tables: ["projects"] });
+  expect(existsSync(join(dir, "data/files/.people-only"))).toBe(false);
+});
+
+test.skipIf(browserFs)("a symlink leading outside the grant is not copied", async () => {
+  const outside = tmpRoot();
+  write(join(outside, "x.png"), "outside");
+  const root = pageFilesRoot();
+  symlinkSync(join(outside, "x.png"), join(root, ".evidence/out.png"));
+  symlinkSync(join(root, ".evidence-private/s.png"), join(root, ".evidence/priv.png"));
+  symlinkSync(join(root, "yamlite.yaml"), join(root, ".evidence/cfg.png"));
+  symlinkSync(join(root, ".yamlite"), join(root, ".evidence/state"));
+  symlinkSync(join(root, ".evidence/a.png"), join(root, ".evidence/alias.png"));
+  const dir = tmpRoot();
+  await writeSnapshotData({ root, dir, tables: ["projects"] });
+  const copied = Object.keys(tree(join(dir, "data/files"))).sort();
+  expect(copied).toEqual([
+    ".evidence/a.png.bin",
+    ".evidence/alias.png.bin",
+    ".evidence/sub/b.txt.bin",
+    "docs/readme.txt.bin",
+  ]);
+});
+
+test("a file over the limit is skipped with a warning", async () => {
+  const root = pageFilesRoot();
+  writeFileSync(join(root, ".evidence/big.bin"), Buffer.alloc(10_485_761));
+  const dir = tmpRoot();
+  const r = await writeSnapshotData({ root, dir, tables: ["projects"] });
+  expect(existsSync(join(dir, "data/files/.evidence/big.bin.bin"))).toBe(false);
+  expect(r.skippedFiles).toEqual({ ".evidence/big.bin": "is larger than 10 MB" });
+  expect(r.warnings).not.toHaveProperty("files");
+  expect(readFileSync(join(dir, "data/files/.evidence/a.png.bin"), "utf8")).toBe(PNG);
+  expect(readFileSync(join(dir, "data/files/docs/readme.txt.bin"), "utf8")).toBe("readme");
+});
+
+test("a table named files keeps its warnings next to skipped files", async () => {
+  const root = setup({
+    "yamlite.yaml":
+      "tables:\n  files:\n    path: files.yaml\n    key: id\n" +
+      "pages:\n  board:\n    path: .pages/board.html\n    access: { files: read }\n    files: [.evidence/]\n",
+    "files.yaml": "- id: a\n  n: 1\n- id: a\n  n: 2\n",
+    ".pages/board.html": "<p>board</p>",
+    ".evidence/big.bin": "",
+  });
+  writeFileSync(join(root, ".evidence/big.bin"), Buffer.alloc(10_485_761));
+  const dir = tmpRoot();
+  const r = await writeSnapshotData({ root, dir });
+  expect(r.warnings.files?.length).toBeGreaterThan(0);
+  expect(r.warnings.files?.join("\n")).not.toContain("larger than");
+  expect(r.skippedFiles).toEqual({ ".evidence/big.bin": "is larger than 10 MB" });
 });

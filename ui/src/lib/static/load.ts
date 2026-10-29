@@ -1,4 +1,4 @@
-import type { Api } from "../api";
+import { type Api, ApiError } from "../api";
 import type { Snapshot, YamlMap } from "../types";
 import { createStaticApi } from "./api";
 
@@ -42,6 +42,20 @@ export function buildPageLoader(base: string, fetcher: typeof fetch): (name: str
   return async (name) => (await fetchOk(base, `data/pages/${encodeURIComponent(name)}.html`, fetcher)).text();
 }
 
+export function buildFileLoader(base: string, fetcher: typeof fetch): (path: string) => Promise<Blob> {
+  return async (path) => {
+    const encoded = path.split("/").map(encodeURIComponent).join("/");
+    let res: Response;
+    try {
+      res = await fetcher(new URL(`data/files/${encoded}.bin`, base).toString());
+    } catch (e) {
+      throw new ApiError(502, e instanceof Error ? e.message : String(e), {});
+    }
+    if (!res.ok) throw new ApiError(res.status, `${path}: ${res.status} ${res.statusText}`.trim(), {});
+    return res.blob();
+  };
+}
+
 export async function loadStatic(
   opts: { base?: string; fetcher?: typeof fetch } = {},
 ): Promise<{ api: Api; snapshot: Snapshot }> {
@@ -67,6 +81,7 @@ export async function loadStatic(
       snapshot,
       loadYaml: buildYamlLoader(base, fetcher),
       loadPage: buildPageLoader(base, fetcher),
+      loadFile: buildFileLoader(base, fetcher),
     }),
     snapshot,
   };

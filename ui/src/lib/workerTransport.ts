@@ -2,12 +2,12 @@ import type { Transport } from "./transport.ts";
 
 type Out =
   | { id: number; kind: "head"; status: number; headers: [string, string][] }
-  | { id: number; kind: "chunk"; data: string }
+  | { id: number; kind: "chunk"; data: ArrayBuffer }
   | { id: number; kind: "end" };
 
 interface Pending {
   head?: (o: Extract<Out, { kind: "head" }>) => void;
-  chunk: (data: string) => void;
+  chunk: (data: Uint8Array) => void;
   end: () => void;
 }
 
@@ -20,7 +20,7 @@ export function createWorkerTransport(port: MessagePort): Transport {
     const p = pending.get(m.id);
     if (!p) return;
     if (m.kind === "head") p.head?.(m);
-    else if (m.kind === "chunk") p.chunk(m.data);
+    else if (m.kind === "chunk") p.chunk(new Uint8Array(m.data));
     else {
       pending.delete(m.id);
       p.end();
@@ -48,7 +48,6 @@ export function createWorkerTransport(port: MessagePort): Transport {
       const signal = init.signal;
       const abortError = () => signal?.reason ?? new DOMException("The operation was aborted.", "AbortError");
       if (signal?.aborted) return reject(abortError());
-      const enc = new TextEncoder();
       let body!: ReadableStreamDefaultController<Uint8Array>;
       let settled = false;
       const stream = new ReadableStream<Uint8Array>({
@@ -75,7 +74,7 @@ export function createWorkerTransport(port: MessagePort): Transport {
       };
       const id = send(String(input), init, {
         head: (h) => open(h.status, h.headers),
-        chunk: (d) => body.enqueue(enc.encode(d)),
+        chunk: (d) => body.enqueue(d),
         end: () => {
           signal?.removeEventListener("abort", onAbort);
           if (!settled) open(500);
@@ -88,8 +87,13 @@ export function createWorkerTransport(port: MessagePort): Transport {
   function eventSource(url: string): EventSource {
     const target = new EventTarget() as EventSource;
     let buffer = "";
+    const decoder = new TextDecoder();
     let id = 0;
-    const s = target as unknown as Record<string, unknown> & { readyState: number; close(): void; url: string };
+    const s = target as unknown as Record<string, unknown> & {
+      readyState: number;
+      close(): void;
+      url: string;
+    };
     s.readyState = 0;
     s.url = url;
     s.CONNECTING = 0;
@@ -133,7 +137,7 @@ export function createWorkerTransport(port: MessagePort): Transport {
         },
         chunk: (d) => {
           if (s.readyState === 2) return;
-          buffer += d;
+          buffer += decoder.decode(d, { stream: true });
           flush();
         },
         end: () => {

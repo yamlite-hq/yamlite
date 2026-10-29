@@ -15,6 +15,7 @@ const board: PageMeta = {
   access: { tasks: "write", people: "read", tasks__tags: "read" },
   sql: false,
   network: [],
+  files: [],
   ai: null,
 };
 
@@ -37,6 +38,7 @@ function setup(
       pageAiStream: vi.fn((_page: string, _body: unknown, _signal: AbortSignal): AsyncIterable<string> => {
         throw new Error("not set");
       }),
+      pageFile: vi.fn(async (_page: string, path: string) => new Blob([path], { type: "image/png" })),
     },
     ai,
     readOnly,
@@ -79,6 +81,7 @@ test("hello describes the page", async () => {
     access: board.access,
     sql: false,
     network: [],
+    files: [],
     readOnly: false,
     ai: null,
   });
@@ -145,6 +148,37 @@ test("get and open take tables, not views", async () => {
   });
   expect(await ask("open", "tasks", "a")).toMatchObject({ ok: true, value: null });
   expect(deps.open).toHaveBeenCalledWith("tasks", "a");
+});
+
+test("file reads only what the page's files grant", async () => {
+  const { ask, deps } = setup({ ...board, files: [".evidence/"] });
+  expect((await ask("file", ".evidence-private/s.png")).error).toEqual({
+    status: 403,
+    message: ".evidence-private/s.png is not in this page's files",
+    extra: {},
+  });
+  expect((await ask("file", ".evidence/../secret.txt")).error).toMatchObject({ status: 403 });
+  expect((await ask("file", "yamlite.yaml")).error).toMatchObject({ status: 403 });
+  expect(deps.api.pageFile).not.toHaveBeenCalled();
+  const answer = await ask("file", ".evidence//a.png");
+  expect(deps.api.pageFile).toHaveBeenCalledWith("board", ".evidence/a.png");
+  expect(answer.value).toBeInstanceOf(Blob);
+  expect(await (answer.value as Blob).text()).toBe(".evidence/a.png");
+});
+
+test("many files asked at once each come back as their own", async () => {
+  const { host, frame, posted } = setup({ ...board, files: [".evidence/"] });
+  const paths = Array.from({ length: 50 }, (_, i) => `.evidence/${i}.png`);
+  paths.forEach((path, i) =>
+    host.handle({ source: frame, data: { yamlite: 1, id: i + 1, method: "file", args: [path] } } as MessageEvent),
+  );
+  await vi.waitFor(() => expect(posted.filter((m) => "ok" in m)).toHaveLength(50));
+  const texts = await Promise.all(paths.map((_, i) => (posted.find((m) => m.id === i + 1)!.value as Blob).text()));
+  expect(texts).toEqual(paths);
+});
+
+test("hello tells the page its files", async () => {
+  expect((await setup({ ...board, files: [".evidence/"] }).ask("hello")).value.files).toEqual([".evidence/"]);
 });
 
 test("sql needs the sql permission", async () => {

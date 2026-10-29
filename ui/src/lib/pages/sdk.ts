@@ -197,6 +197,7 @@ export function pageSdk(
       call("update", table, key, values, base),
     remove: (table: string, key: string) => call("remove", table, key),
     sql: (sql: string) => call("sql", sql),
+    file: (path: string) => call("file", path),
     open: (table: string, key: string) => call("open", table, key),
     ai: Object.freeze({
       generate: (input: Record<string, unknown>) => call("ai", input),

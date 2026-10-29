@@ -234,6 +234,9 @@ program
     for (const [page, reason] of Object.entries(r.skippedPages)) {
       console.log(`  ${out("yellow", "!")} page ${page} not exported: ${reason}`);
     }
+    for (const [path, reason] of Object.entries(r.skippedFiles)) {
+      console.log(`  ${out("yellow", "!")} file ${path} not exported: ${reason}`);
+    }
     console.log(out("dim", "  serve the folder over HTTP to open it; file:// does not work"));
   });
 

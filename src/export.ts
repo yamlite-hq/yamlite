@@ -1,4 +1,5 @@
 import {
+  copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -19,12 +20,14 @@ import { configPath } from "./config.ts";
 import { q } from "./ident.ts";
 import { withScratch } from "./scratch.ts";
 import { Store } from "./store.ts";
-import { type ApiContext, displayPath } from "./serve/context.ts";
+import { type ApiContext, deniedFiles, displayPath } from "./serve/context.ts";
 import { EventHub } from "./serve/events.ts";
 import { PageSql } from "./serve/pagesql.ts";
 import { Router, withBase } from "./serve/http.ts";
 import { ROUTES } from "./serve/routes/index.ts";
-import { readPageHtml } from "./serve/routes/pages.ts";
+import { deniedFile } from "./pages/access.ts";
+import { grantedFile, readPageHtml } from "./serve/routes/pages.ts";
+import { HttpError } from "./serve/errors.ts";
 import { recordFile } from "./serve/routes/rows.ts";
 
 export interface Snapshot {
@@ -50,6 +53,7 @@ export interface ExportResult {
   warnings: Record<string, string[]>;
   pages: string[];
   skippedPages: Record<string, string>;
+  skippedFiles: Record<string, string>;
 }
 
 type Json = Record<string, any>;
@@ -98,6 +102,53 @@ export function warningScrubber(root: string, specPaths: string[]): (warning: st
   };
 }
 
+// every file a granted folder holds, and every listed file, as root-relative paths; symlinked folders are not followed
+function grantedCandidates(root: string, entries: string[]): string[] {
+  const found: string[] = [];
+  const walk = (rel: string) => {
+    let items;
+    try {
+      items = readdirSync(join(root, rel), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const item of items) {
+      const path = `${rel}${item.name}`;
+      if (item.isDirectory()) walk(`${path}/`);
+      else found.push(path);
+    }
+  };
+  for (const entry of entries) {
+    if (entry.endsWith("/")) walk(entry);
+    else found.push(entry);
+  }
+  return found;
+}
+
+// what a granted page may read is copied under data/files/; whatever the server would refuse is left out
+function copyPageFiles(
+  root: string,
+  dir: string,
+  grants: string[],
+  denied: string[],
+  skipped: Record<string, string>,
+): void {
+  for (const path of new Set(grantedCandidates(root, grants))) {
+    if (deniedFile(path, denied)) continue;
+    let real: string;
+    try {
+      real = grantedFile(root, grants, denied, path).real;
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 413) skipped[path] = "is larger than 10 MB";
+      continue;
+    }
+    // stored as .bin so a static host serves it as a download, never as a page on the export's origin
+    const dest = join(dir, "data", "files", `${path}.bin`);
+    mkdirSync(dirname(dest), { recursive: true });
+    copyFileSync(real, dest);
+  }
+}
+
 const writeJson = (path: string, value: unknown) => writeFileSync(path, JSON.stringify(value));
 
 export async function writeSnapshotData(opts: {
@@ -110,6 +161,7 @@ export async function writeSnapshotData(opts: {
   warnings: Record<string, string[]>;
   pages: string[];
   skippedPages: Record<string, string>;
+  skippedFiles: Record<string, string>;
 }> {
   const root = resolve(opts.root);
   const stamp = generatedAt(opts.now ?? (() => new Date()));
@@ -120,6 +172,7 @@ export async function writeSnapshotData(opts: {
     const yaml: Array<[string, YamlMap]> = [];
     const pages: Array<[string, string]> = [];
     const skippedPages: Record<string, string> = {};
+    const skippedFiles: Record<string, string> = {};
     const all = y.tables.map((t) => t.name);
     const unknown = (opts.tables ?? []).filter((n) => !all.includes(n));
     if (unknown.length > 0) throw new Error(`unknown table: ${unknown.join(", ")}`);
@@ -151,6 +204,8 @@ export async function writeSnapshotData(opts: {
         agent: null,
         git: null,
         reloadConfig: () => {},
+        pageFiles: null,
+        deniedFiles: deniedFiles(root, stateDir, dbPath),
         proposals: new ProposalStore({
           store,
           dry: store,
@@ -182,6 +237,13 @@ export async function writeSnapshotData(opts: {
         }
       }
       const kept = new Set(pages.map(([name]) => name));
+      copyPageFiles(
+        root,
+        opts.dir,
+        y.pages.filter((p) => kept.has(p.name)).flatMap((p) => p.files),
+        ctx.deniedFiles,
+        skippedFiles,
+      );
       meta = {
         ...served,
         root: basename(root),
@@ -249,7 +311,7 @@ export async function writeSnapshotData(opts: {
     for (const [name, map] of yaml) writeJson(join(opts.dir, "data", "yaml", `${name}.json`), map);
     if (pages.length > 0) mkdirSync(join(opts.dir, "data", "pages"), { recursive: true });
     for (const [name, html] of pages) writeFileSync(join(opts.dir, "data", "pages", `${name}.html`), html);
-    return { tables: selected, warnings, pages: pages.map(([name]) => name), skippedPages };
+    return { tables: selected, warnings, pages: pages.map(([name]) => name), skippedPages, skippedFiles };
   });
 }
 
@@ -355,7 +417,7 @@ export async function exportSite(opts: ExportOptions): Promise<ExportResult> {
     if (!html.includes("<head>")) throw new Error(`${indexPath} has no <head>`);
     const index = html.replace("<head>", `<head>\n    ${STATIC_META}\n    ${FILE_GUARD}`);
     writeFileSync(join(staging, "index.html"), index);
-    const { tables, warnings, pages, skippedPages } = await writeSnapshotData({
+    const { tables, warnings, pages, skippedPages, skippedFiles } = await writeSnapshotData({
       root: opts.root,
       tables: opts.tables,
       dir: staging,
@@ -378,7 +440,7 @@ export async function exportSite(opts: ExportOptions): Promise<ExportResult> {
     } else {
       renameSync(staging, out);
     }
-    return { out, tables, warnings, pages, skippedPages };
+    return { out, tables, warnings, pages, skippedPages, skippedFiles };
   } catch (e) {
     rmSync(staging, { recursive: true, force: true });
     throw e;

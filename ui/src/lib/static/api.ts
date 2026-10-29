@@ -1,5 +1,12 @@
 import type { BindParams, Database, SqlValue } from "sql.js";
 import { q } from "../../../../src/ident.ts";
+import {
+  contentTypeOf,
+  DENIED_FILES,
+  deniedFile,
+  fileGranted,
+  normalizeFilePath,
+} from "../../../../src/pages/access.ts";
 import { HttpError } from "../../../../src/serve/errors.ts";
 import { buildWhere, orderBy, parseRowQuery } from "../../../../src/serve/query.ts";
 import { buildSearchSql, parseSearchQuery, toSearchHit } from "../../../../src/serve/search.ts";
@@ -44,6 +51,7 @@ export function createStaticApi(opts: {
   snapshot: Snapshot;
   loadYaml: (table: string) => Promise<YamlMap>;
   loadPage: (name: string) => Promise<string>;
+  loadFile: (path: string) => Promise<Blob>;
 }): Api {
   const { db, snapshot } = opts;
   const { meta } = snapshot;
@@ -147,6 +155,18 @@ export function createStaticApi(opts: {
         return select(sql);
       }),
     pageHtml: (name) => guard(() => opts.loadPage(name)),
+    pageFile: (name, asked) =>
+      guard(async () => {
+        const spec = meta.pages.find((p) => p.name === name);
+        if (!spec) throw new HttpError(404, `unknown page: ${name}`);
+        const path = normalizeFilePath(asked);
+        if (path === null || !fileGranted(spec.files, path))
+          throw new HttpError(403, `${asked} is not in this page's files`);
+        if (deniedFile(path, DENIED_FILES))
+          throw new HttpError(403, `${asked} is YAMLite's own and no page may read it`);
+        // a static host guesses the type from the extension; the page gets the type the server would have sent
+        return new Blob([await opts.loadFile(path)], { type: contentTypeOf(path) });
+      }),
     pageSql: (name, sql) =>
       guard((): SqlResult => {
         const spec = meta.pages.find((p) => p.name === name);

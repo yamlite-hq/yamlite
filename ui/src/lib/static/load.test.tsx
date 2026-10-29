@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { LoadFailure } from "@/components/LoadFailure";
 import { isStaticPage } from "../mode";
-import { buildPageLoader, LoadError, loadStatic } from "./load";
+import { buildFileLoader, buildPageLoader, LoadError, loadStatic } from "./load";
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
@@ -48,4 +48,14 @@ test("loadPage fetches the page's html next to the data", async () => {
   const load = buildPageLoader("https://x.test/repo/", fetcher as typeof fetch);
   expect(await load("board")).toBe("<p>x</p>");
   expect(fetcher).toHaveBeenCalledWith("https://x.test/repo/data/pages/board.html");
+});
+
+test("loadFile fetches a file under data/files with its .bin suffix, encoding each segment, and a failure keeps its status", async () => {
+  const fetcher = vi.fn(async (url: string | URL | Request) =>
+    String(url).endsWith("gone.png.bin") ? new Response("", { status: 404 }) : new Response("png", { status: 200 }),
+  );
+  const load = buildFileLoader("https://x.test/repo/", fetcher as unknown as typeof fetch);
+  expect(await (await load(".evidence/a b#1.png")).text()).toBe("png");
+  expect(fetcher).toHaveBeenCalledWith("https://x.test/repo/data/files/.evidence/a%20b%231.png.bin");
+  await expect(load(".evidence/gone.png")).rejects.toMatchObject({ status: 404 });
 });

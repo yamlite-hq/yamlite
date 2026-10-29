@@ -26,7 +26,13 @@ import {
 } from "./types.ts";
 import { resolveField } from "./fieldpath.ts";
 import { declaredViews } from "./views.ts";
-import { PAGE_AI_DEFAULT_TOKENS, PAGE_AI_MAX_TOKENS } from "./pages/access.ts";
+import {
+  DENIED_FILES,
+  deniedFile,
+  normalizeFilePath,
+  PAGE_AI_DEFAULT_TOKENS,
+  PAGE_AI_MAX_TOKENS,
+} from "./pages/access.ts";
 
 export interface TableInput {
   name: string;
@@ -689,7 +695,7 @@ function checkViewNames(tables: TableSpec[]): TableSpec[] {
   return tables;
 }
 
-const PAGE_KEYS = ["path", "title", "access", "sql", "network", "ai"];
+const PAGE_KEYS = ["path", "title", "access", "sql", "network", "files", "ai"];
 const PAGE_NAME = /^[a-z0-9][a-z0-9_-]*$/;
 
 function toOrigin(where: string, raw: unknown): string {
@@ -704,6 +710,20 @@ function toOrigin(where: string, raw: unknown): string {
   }
   if ((url.protocol !== "https:" && url.protocol !== "http:") || raw.replace(/\/$/, "") !== url.origin) throw invalid();
   return url.origin;
+}
+
+// entries stay as written: a trailing / grants a folder, anything else one file
+function toFiles(where: string, raw: unknown): string[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) throw new Error(`${where}files must be a list of root-relative files and folders`);
+  return raw.map((entry) => {
+    const invalid = (why: string) => new Error(`${where}files entry ${JSON.stringify(entry)} ${why}`);
+    if (typeof entry !== "string" || normalizeFilePath(entry) !== entry) {
+      throw invalid("must be a root-relative path without .., . or empty segments");
+    }
+    if (deniedFile(entry, DENIED_FILES)) throw invalid("is YAMLite's own and cannot be granted");
+    return entry;
+  });
 }
 
 function toPageAi(where: string, raw: unknown): PageSpec["ai"] {
@@ -759,6 +779,7 @@ function toPages(raw: unknown, place: (path: string) => string): PageSpec[] {
       access,
       sql: v.sql === true,
       network: ((v.network ?? []) as unknown[]).map((o) => toOrigin(where, o)),
+      files: toFiles(where, v.files),
       ai: toPageAi(where, v.ai),
     };
   });

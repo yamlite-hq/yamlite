@@ -30,6 +30,7 @@ test("a declared page resolves its path, title and permissions", () => {
       access: { tasks: "write", projects__milestones: "read" },
       sql: true,
       network: ["https://cdn.jsdelivr.net"],
+      files: [],
       ai: null,
     },
   ]);
@@ -41,8 +42,39 @@ test("a page allows nothing unless it says so, and is titled by its name", () =>
     access: {},
     sql: false,
     network: [],
+    files: [],
     ai: null,
   });
+});
+
+test("files entries stay as written and default to none", () => {
+  expect(pagesOf("pages:\n  board:\n    path: b.html\n    files: [.evidence/, docs/a.png]\n")[0]?.files).toEqual([
+    ".evidence/",
+    "docs/a.png",
+  ]);
+  expect(pagesOf("pages:\n  board:\n    path: b.html\n")[0]?.files).toEqual([]);
+  expect(pagesOf("pages:\n  board:\n    path: b.html\n    files: [data/]\n")[0]?.files).toEqual(["data/"]);
+});
+
+test.each([
+  "'/abs/'",
+  "''",
+  "a/../b",
+  "./a",
+  "a/./b",
+  ".yamlite/",
+  ".yamlite/x",
+  "yamlite.yaml",
+  "yamlite.yml",
+  "Yamlite.yaml",
+  ".YAMLITE/x",
+  "3",
+])("rejects the files entry %s", (entry) => {
+  expect(() => pagesOf(`pages:\n  board:\n    path: b.html\n    files: [${entry}]\n`)).toThrow('page "board": files');
+});
+
+test("rejects files that is not a list", () => {
+  expect(() => pagesOf("pages:\n  board:\n    path: b.html\n    files: x\n")).toThrow('page "board": files');
 });
 
 test("no pages key means no pages", () => {

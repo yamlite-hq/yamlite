@@ -1,4 +1,11 @@
-import { canRead, canWrite, notInAccess, writesAnything } from "../../../../src/pages/access.ts";
+import {
+  canRead,
+  canWrite,
+  fileGranted,
+  normalizeFilePath,
+  notInAccess,
+  writesAnything,
+} from "../../../../src/pages/access.ts";
 import { type Api, ApiError, type PageAiInput } from "../api";
 import type { Filter, Meta, PageMeta, Row } from "../types";
 import { type PageLocation, pagePath } from "./location";
@@ -6,7 +13,10 @@ import { type PageLocation, pagePath } from "./location";
 export const READ_ONLY = "this page is read-only here";
 
 export interface HostDeps {
-  api: Pick<Api, "rows" | "record" | "create" | "update" | "remove" | "pageSql" | "pageAi" | "pageAiStream">;
+  api: Pick<
+    Api,
+    "rows" | "record" | "create" | "update" | "remove" | "pageSql" | "pageAi" | "pageAiStream" | "pageFile"
+  >;
   readOnly: boolean;
   // the provider that answers a page's AI calls, or null when the host holds no key
   ai(): { provider: string; models: string[] } | null;
@@ -188,6 +198,7 @@ export class PageHost {
           access: page.access,
           sql: page.sql,
           network: page.network,
+          files: page.files,
           readOnly: this.deps.readOnly || !writesAnything(page),
           ai,
         };
@@ -223,6 +234,12 @@ export class PageHost {
       case "sql":
         if (!page.sql) throw fail(403, `page ${page.name} may not run SQL`);
         return api.pageSql(page.name, text(args[0], "sql"));
+      case "file": {
+        const asked = text(args[0], "path");
+        const path = normalizeFilePath(asked);
+        if (path === null || !fileGranted(page.files, path)) throw fail(403, `${asked} is not in this page's files`);
+        return api.pageFile(page.name, path);
+      }
       case "ai":
         return api.pageAi(page.name, this.aiInput(args), this.generating.signal);
       case "ai-stream":

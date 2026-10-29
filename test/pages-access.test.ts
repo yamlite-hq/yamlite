@@ -4,6 +4,11 @@ import {
   accessSummary,
   canRead,
   canWrite,
+  contentTypeOf,
+  DENIED_FILES,
+  deniedFile,
+  fileGranted,
+  normalizeFilePath,
   notInAccess,
   type PageRules,
   pageCsp,
@@ -16,6 +21,7 @@ const page = (access: PageRules["access"], extra: Partial<PageRules> = {}): Page
   access,
   sql: false,
   network: [],
+  files: [],
   ai: null,
   ...extra,
 });
@@ -90,4 +96,55 @@ test("the summary and brief mention AI when the page has it", () => {
   expect(accessSummary(page({ tasks: "read" }, { ai }))).toBe("tasks: read · AI");
   expect(accessBrief(page({ tasks: "read" }, { ai }))).toBe("read 1 · AI");
   expect(accessBrief(page({}, { ai }))).toBe("AI");
+});
+
+test("a folder entry grants what is under it, a file entry only itself", () => {
+  expect(fileGranted([".evidence/"], ".evidence/a/b.png")).toBe(true);
+  expect(fileGranted([".evidence/"], ".evidence-private/a.png")).toBe(false);
+  expect(fileGranted([".evidence"], ".evidence/a.png")).toBe(false);
+  expect(fileGranted(["a.png"], "a.png")).toBe(true);
+});
+
+test("normalizeFilePath collapses . and empty segments and refuses escapes", () => {
+  expect(normalizeFilePath(".evidence//./a.png")).toBe(".evidence/a.png");
+  expect(normalizeFilePath(".evidence/../x")).toBeNull();
+  expect(normalizeFilePath("/x")).toBeNull();
+  expect(normalizeFilePath("")).toBeNull();
+});
+
+test("deniedFile matches nested folders and exact files", () => {
+  expect(deniedFile("data/.yamlite/db.sqlite", ["data/.yamlite/"])).toBe(true);
+  expect(deniedFile("yamlite.yaml", DENIED_FILES)).toBe(true);
+  expect(deniedFile("docs/a.png", DENIED_FILES)).toBe(false);
+});
+
+test("deniedFile ignores case, as a case-insensitive disk would", () => {
+  expect(deniedFile("Yamlite.yaml", DENIED_FILES)).toBe(true);
+  expect(deniedFile(".YAMLITE/db.sqlite", DENIED_FILES)).toBe(true);
+  expect(deniedFile("data/.yamlite/db.sqlite", ["Data/.Yamlite/"])).toBe(true);
+});
+
+test("contentTypeOf goes by extension, case-insensitively", () => {
+  expect(contentTypeOf("A.PNG")).toBe("image/png");
+  expect(contentTypeOf("x.bin")).toBe("application/octet-stream");
+  expect(contentTypeOf("a.txt")).toBe("text/plain");
+  for (const name of [
+    "a.html",
+    "a.json",
+    "a.md",
+    "a.yaml",
+    "noext",
+    "png",
+    "a.constructor",
+    "a.toString",
+    "a.__proto__",
+  ]) {
+    expect(contentTypeOf(name)).toBe("application/octet-stream");
+  }
+});
+
+test("files show in the summary and as a count in the brief", () => {
+  expect(accessSummary(page({}, { files: [".evidence/"] }))).toContain("files: .evidence/");
+  expect(accessBrief(page({}, { files: [".evidence/"] }))).toContain("1 file entry");
+  expect(accessBrief(page({}, { files: [".evidence/", "a.png"] }))).toContain("2 file entries");
 });

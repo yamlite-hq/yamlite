@@ -9,7 +9,7 @@ import { open } from "../index.ts";
 import { Store } from "../store.ts";
 import type { WatchOptions } from "../watch.ts";
 import { which } from "../which.ts";
-import type { ApiContext } from "./context.ts";
+import { type ApiContext, deniedFiles } from "./context.ts";
 import { EventHub } from "./events.ts";
 import { Router } from "./http.ts";
 import { PageSql } from "./pagesql.ts";
@@ -21,6 +21,9 @@ import { assertSynced } from "./write.ts";
 // Ask AI as a host configures it; the workspace supplies the tools and what they report
 export type AiOptions = Omit<HostOptions, "tools" | "feedback" | "notes">;
 
+// bytes, or why there are none; undefined leaves the file to the working tree
+export type PageFileResult = Uint8Array<ArrayBuffer> | "missing" | "too-large" | undefined;
+
 export interface WorkspaceOptions {
   root: string;
   db?: string;
@@ -31,6 +34,8 @@ export interface WorkspaceOptions {
   git?: GitDriver | null;
   // skips gh detection; null means no gh
   gh?: string | null;
+  // a host's own source for page files (one that fetches them lazily); path is root-relative, granted and not denied
+  pageFiles?: (path: string, signal: AbortSignal) => Promise<PageFileResult>;
 }
 
 // one data root's server: everything but the listener and the access check
@@ -101,11 +106,12 @@ export async function createWorkspace(o: WorkspaceOptions): Promise<Workspace> {
         if (p.git && (p.status === "applied" || p.status === "failed")) ctx.agent?.notify(p.conversationId, GIT_DONE);
       },
     );
+    const root = resolve(o.root);
     const ctx: ApiContext = {
       y,
       store,
       pageSql,
-      root: resolve(o.root),
+      root,
       stateDir: config.stateDir,
       configFile,
       dbPath: config.db,
@@ -114,6 +120,8 @@ export async function createWorkspace(o: WorkspaceOptions): Promise<Workspace> {
       agent: null,
       git,
       reloadConfig: () => watcher.reloadConfig(),
+      pageFiles: o.pageFiles ?? null,
+      deniedFiles: deniedFiles(root, config.stateDir, config.db),
     };
     const router = new Router();
     for (const routes of ROUTES) routes(router, ctx);

@@ -112,6 +112,8 @@ export function realpathSync(p: string): string {
   get(abs(p), "realpath");
   return abs(p);
 }
+// no symlinks and one case here, so the native variant is the same
+realpathSync.native = realpathSync;
 
 export function readFileSync(p: string, opts?: string | { encoding?: string }) {
   const path = abs(p);
@@ -222,6 +224,12 @@ export function linkSync(from: string, to: string): void {
   emit("add", b);
 }
 
+export function copyFileSync(from: string, to: string): void {
+  const e = get(abs(from), "copyfile");
+  if (e.kind === "dir") fail("EISDIR", "illegal operation on a directory", "copyfile", abs(from));
+  writeFileSync(to, e.data);
+}
+
 export function cpSync(from: string, to: string): void {
   const a = abs(from);
   const b = abs(to);
@@ -258,6 +266,7 @@ export default {
   accessSync,
   chmodSync,
   constants,
+  copyFileSync,
   cpSync,
   createReadStream,
   existsSync,

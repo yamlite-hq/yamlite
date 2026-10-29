@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { createRequire } from "node:module";
 import initSqlJs, { type Database } from "sql.js";
-import { beforeAll, expect, test } from "vitest";
+import { beforeAll, expect, test, vi } from "vitest";
 import { ApiError } from "../api";
 import type { Snapshot, YamlMap } from "../types";
 import { createStaticApi } from "./api";
@@ -117,6 +117,7 @@ const snapshot: Snapshot = {
         access: { tasks: "read" },
         sql: true,
         network: [],
+        files: [".evidence/", "yamlite.yaml"],
         ai: null,
       },
       {
@@ -126,6 +127,7 @@ const snapshot: Snapshot = {
         access: { tasks: "read" },
         sql: false,
         network: [],
+        files: [],
         ai: null,
       },
     ],
@@ -144,6 +146,7 @@ const make = (loadYaml: (t: string) => Promise<YamlMap> = async () => yaml) =>
     snapshot,
     loadYaml,
     loadPage: async (name) => `<p>${name}</p>`,
+    loadFile: async () => new Blob(["x"]),
   });
 const ids = (rows: Array<Record<string, unknown>>) => rows.map((r) => r.id);
 
@@ -365,6 +368,7 @@ test("a record key named __proto__ finds its YAML, and one named like an Object 
     snapshot,
     loadYaml: async () => map,
     loadPage: async () => "",
+    loadFile: async () => new Blob([]),
   });
   expect(await api.record("tasks", "__proto__")).toMatchObject({
     file: "tasks/__proto__.yaml",
@@ -441,4 +445,32 @@ test("search ranks hits across tables like the server", async () => {
     { table: "nums", key: "n1", label: null, column: "vals", value: "[3]", rank: 3, total: 1 },
   ]);
   await expect(api.search("a", 5)).rejects.toMatchObject({ status: 400 });
+});
+
+test("a page's file comes from the export when its path is granted, and an ungranted one is refused without a fetch", async () => {
+  const loadFile = vi.fn(async (path: string) => {
+    if (path === ".evidence/gone.png") throw new ApiError(404, "not found", {});
+    return new Blob([path]);
+  });
+  const api = createStaticApi({
+    db: fixture(),
+    snapshot,
+    loadYaml: async () => yaml,
+    loadPage: async () => "",
+    loadFile,
+  });
+  const blob = await api.pageFile("board", "./.evidence//a.png");
+  expect(await blob.text()).toBe(".evidence/a.png");
+  expect(blob.type).toBe("image/png");
+  expect(loadFile).toHaveBeenCalledWith(".evidence/a.png");
+  loadFile.mockClear();
+  for (const path of [".evidence-private/s.png", "../x.png", "/etc/passwd"]) {
+    await expect(api.pageFile("board", path)).rejects.toMatchObject({ status: 403 });
+  }
+  await expect(api.pageFile("board", "YAMLITE.yaml")).rejects.toMatchObject({ status: 403 });
+  await expect(api.pageFile("board", ".evidence/.yamlite/db.sqlite")).resolves.toBeInstanceOf(Blob);
+  await expect(api.pageFile("plain", ".evidence/a.png")).rejects.toMatchObject({ status: 403 });
+  await expect(api.pageFile("nope", "a.png")).rejects.toMatchObject({ status: 404 });
+  await expect(api.pageFile("board", ".evidence/gone.png")).rejects.toMatchObject({ status: 404 });
+  expect(loadFile).toHaveBeenCalledTimes(2);
 });
