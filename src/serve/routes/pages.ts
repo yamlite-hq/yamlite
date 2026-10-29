@@ -39,11 +39,16 @@ const tooLarge = (path: string) => new HttpError(413, `${path} is larger than 10
 const missing = (path: string) => new HttpError(404, `file not found: ${path}`);
 
 // the grant and the deny list hold for the file a symlink leads to, not only for the path asked
-function readGranted(ctx: ApiContext, page: PageSpec, path: string): Uint8Array<ArrayBuffer> {
+export function grantedFile(
+  root: string,
+  files: string[],
+  denied: string[],
+  path: string,
+): { real: string; size: number } {
   let real: string;
   let size: number;
   try {
-    real = realpathSync.native(join(ctx.root, path));
+    real = realpathSync.native(join(root, path));
     const st = statSync(real);
     if (!st.isFile()) throw missing(path);
     size = st.size;
@@ -51,13 +56,16 @@ function readGranted(ctx: ApiContext, page: PageSpec, path: string): Uint8Array<
     if (e instanceof HttpError) throw e;
     throw missing(path);
   }
-  const rel = relative(realpathSync.native(ctx.root), real);
+  const rel = relative(realpathSync.native(root), real);
   const shown = rel.split(sep).join("/");
-  if (rel.startsWith("..") || isAbsolute(rel) || !fileGranted(page.files, shown) || deniedFile(shown, ctx.deniedFiles))
+  if (rel.startsWith("..") || isAbsolute(rel) || !fileGranted(files, shown) || deniedFile(shown, denied))
     throw new HttpError(403, `${path} leads outside this page's files`);
   if (size > MAX_PAGE_FILE_BYTES) throw tooLarge(path);
-  return readFileSync(real);
+  return { real, size };
 }
+
+const readGranted = (ctx: ApiContext, page: PageSpec, path: string): Uint8Array<ArrayBuffer> =>
+  readFileSync(grantedFile(ctx.root, page.files, ctx.deniedFiles, path).real);
 
 export const pageRoutes: Routes = (router, ctx) => {
   router.add("GET", "/api/pages/:page/html", ({ params }) => {
