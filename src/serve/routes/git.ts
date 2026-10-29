@@ -1,6 +1,7 @@
 import { NoRepository, ReviewRefused } from "../../git/driver.ts";
 import type { ReviewRequest } from "../../git/review.ts";
-import { existsSync, lstatSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { type DraftFile, draftReview } from "../../agent/reviewdraft.ts";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { writeAtomic } from "../../fsutil.ts";
 import { canonical } from "../../hash.ts";
@@ -12,6 +13,7 @@ import { wireValue } from "../wire.ts";
 import { HttpError } from "../http.ts";
 import { assertSynced, objectBody, writeTx } from "../write.ts";
 import type { Routes } from "./index.ts";
+import { modelError } from "./pageai.ts";
 
 function reviewBody(body: unknown): ReviewRequest {
   const b = objectBody(body, "body");
@@ -171,6 +173,55 @@ export const gitRoutes: Routes = (router, ctx) => {
     });
   });
 
+  // asked when the review dialog opens rather than with /api/git, since gh is slow and /api/git is fetched often
+  router.add("GET", "/api/git/pr", async () => {
+    const git = ctx.git;
+    if (!git) throw new HttpError(404, "the data folder is not in a git repository");
+    return { url: (await git.openPr?.().catch(notFound)) ?? null };
+  });
+
+  router.add("POST", "/api/git/review/draft", async ({ body, signal }) => {
+    const git = ctx.git;
+    if (!git) throw new HttpError(404, "the data folder is not in a git repository");
+    if (!ctx.agent) throw new HttpError(404, "no agent is available");
+    const b = objectBody(body, "body");
+    if (!Array.isArray(b.paths) || b.paths.length === 0 || b.paths.some((p) => typeof p !== "string"))
+      throw new HttpError(400, "choose at least one file", { field: "paths" });
+    if (b.mode !== "pr" && b.mode !== "commit") throw new HttpError(400, "mode must be pr or commit");
+    const locale = typeof b.locale === "string" ? b.locale : "en";
+    const { provider, languageModel } = ctx.agent.viewerModel({
+      provider: b.provider,
+      model: b.model,
+      apiKey: b.apiKey,
+    });
+    const changed = new Map((await git.status().catch(notFound)).changes.map((c) => [c.path, c.status]));
+    const files: DraftFile[] = await Promise.all(
+      (b.paths as string[]).map(async (path) => {
+        const status = changed.get(path);
+        if (status === undefined) throw new HttpError(400, `${path} has no changes`);
+        const found = await recordChanges(git, ctx.root, ctx.y.tables, path);
+        if (found?.records) return { path, status, table: found.table, records: found.records };
+        return {
+          path,
+          status,
+          table: found?.table ?? null,
+          records: null,
+          before: shownText(await git.baseContent(path)),
+          after: shownFile(join(ctx.root, path)),
+        };
+      }),
+    );
+    const template = b.mode === "pr" ? ((await git.pullRequestTemplate?.()) ?? null) : null;
+    const release = ctx.agent.pageSlot();
+    try {
+      return await draftReview(languageModel, { files, mode: b.mode, locale, template, ai: ctx.y.ai }, signal);
+    } catch (e) {
+      throw modelError(e, provider);
+    } finally {
+      release();
+    }
+  });
+
   // puts records back to their committed values through the same writes as the forms, so the sync writes the files;
   // other changed files are written back as committed, or removed when git has never seen them
   router.add("POST", "/api/git/revert", async ({ body }) => {
@@ -255,6 +306,23 @@ export const gitRoutes: Routes = (router, ctx) => {
     };
   });
 };
+
+// what of a changed file's text goes to the model: never a symlink's target, which may be outside the data folder,
+// nor a binary or a large file
+const DRAFT_FILE_BYTES = 64 * 1024;
+const OMITTED = "(not shown: a binary file or one larger than 64 KB)";
+
+function shownText(text: string | null): string | null {
+  if (text === null) return null;
+  return text.length > DRAFT_FILE_BYTES || text.includes("\0") ? OMITTED : text;
+}
+
+function shownFile(file: string): string | null {
+  if (!existsSync(file)) return null;
+  const s = lstatSync(file);
+  if (!s.isFile()) return s.isSymbolicLink() ? "(a symbolic link)" : null;
+  return s.size > DRAFT_FILE_BYTES ? OMITTED : shownText(readFileSync(file, "utf8"));
+}
 
 // a local serve started outside a repository answers as if it had no git
 function notFound(e: unknown): never {

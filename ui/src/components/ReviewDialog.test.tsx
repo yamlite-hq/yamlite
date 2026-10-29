@@ -8,8 +8,24 @@ import { ReviewDialog } from "./ReviewDialog";
 
 vi.mock("@/lib/git", async (orig) => {
   const real = await orig<typeof import("@/lib/git")>();
-  return { ...real, gitApi: { ...real.gitApi, review: vi.fn(), diff: vi.fn(), revert: vi.fn() } };
+  return {
+    ...real,
+    gitApi: {
+      ...real.gitApi,
+      review: vi.fn(),
+      diff: vi.fn(),
+      revert: vi.fn(),
+      openPr: vi.fn(async () => null),
+      draft: vi.fn(),
+    },
+  };
 });
+const providers = vi.hoisted(() => ({ list: [] as import("@/lib/ai").AiProvider[] }));
+vi.mock("@/lib/ai", async (orig) => ({
+  ...(await orig<typeof import("@/lib/ai")>()),
+  useAiProviders: () => providers.list,
+  useAiHost: () => ({ viewerKeys: true, settingsUrl: null, unavailable: false }),
+}));
 vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<typeof import("@/lib/api")>()),
   api: { create: vi.fn(), update: vi.fn(), remove: vi.fn() },
@@ -25,7 +41,10 @@ vi.mock("@/lib/providers", () => ({
   }),
 }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.clearAllMocks();
+  providers.list = [];
+});
 
 const git: GitState = {
   branch: "main",
@@ -278,4 +297,100 @@ test("a host that names the branch itself is not asked for one", () => {
   renderDialog({ ...git, namesBranch: false });
   expect(screen.getByRole("textbox", { name: "Title" })).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: /^Branch name/ })).toBeNull();
+});
+
+const anthropic = {
+  id: "anthropic",
+  name: "Anthropic",
+  models: ["claude-sonnet-5-5"],
+  fixedModels: false,
+  hasKey: true,
+};
+
+test("the AI button fills the title and the description from the checked files", async () => {
+  providers.list = [anthropic];
+  vi.mocked(gitApi.draft).mockResolvedValue({ title: "Rename task a", body: "- a: A → A2" });
+  renderDialog();
+  fireEvent.change(screen.getByRole("textbox", { name: "Title" }), { target: { value: "old" } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "Include yamlite.yaml" }));
+  fireEvent.click(screen.getByRole("button", { name: "Write with AI" }));
+  await waitFor(() =>
+    expect((screen.getByRole("textbox", { name: "Title" }) as HTMLInputElement).value).toBe("Rename task a"),
+  );
+  expect((screen.getByRole("textbox", { name: "Description (optional)" }) as HTMLTextAreaElement).value).toBe(
+    "- a: A → A2",
+  );
+  expect(gitApi.draft).toHaveBeenCalledWith({
+    paths: ["people.yaml", "tasks/a.yaml", "tasks/b.yaml", ".pages/new.html"],
+    mode: "pr",
+    locale: "en",
+    provider: "anthropic",
+    model: "claude-sonnet-5-5",
+    apiKey: "",
+  });
+});
+
+test("without an AI provider there is no AI button and no way to edit the instructions", () => {
+  renderDialog();
+  expect(screen.queryByRole("button", { name: "Write with AI" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Edit instructions" })).toBeNull();
+});
+
+test("Edit instructions opens the AI instructions dialog", async () => {
+  providers.list = [anthropic];
+  renderDialog();
+  fireEvent.click(screen.getByRole("button", { name: "Edit instructions" }));
+  expect(await screen.findByRole("dialog", { name: "AI instructions" })).toBeTruthy();
+});
+
+test("with an open PR the dialog asks only for a commit message and links the PR", async () => {
+  providers.list = [anthropic];
+  vi.mocked(gitApi.openPr).mockResolvedValue("https://github.com/acme/notes/pull/7");
+  vi.mocked(gitApi.draft).mockResolvedValue({ title: "Add floor" });
+  vi.mocked(gitApi.review).mockResolvedValue({ branch: "work", steps: [], results: [], url: null, created: false });
+  renderDialog({ ...git, branch: "work" });
+  const input = await screen.findByRole("textbox", { name: "Commit message" });
+  expect(screen.queryByRole("textbox", { name: "Description (optional)" })).toBeNull();
+  expect(screen.getByText("The selected changes are added to the open review as a new commit.")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Open the review" }).getAttribute("href")).toBe(
+    "https://github.com/acme/notes/pull/7",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Write with AI" }));
+  await waitFor(() => expect((input as HTMLInputElement).value).toBe("Add floor"));
+  expect(gitApi.draft).toHaveBeenCalledWith(expect.objectContaining({ mode: "commit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() =>
+    expect(gitApi.review).toHaveBeenCalledWith(expect.objectContaining({ title: "Add floor", body: "" })),
+  );
+});
+
+test("on a branch without an open PR the dialog says a review is opened", async () => {
+  vi.mocked(gitApi.openPr).mockResolvedValue(null);
+  renderDialog({ ...git, branch: "work" });
+  expect(await screen.findByText("The selected changes open a review from this branch.")).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Description (optional)" })).toBeTruthy();
+});
+
+test("the description is offered only once it is known that no PR is open", async () => {
+  let answer!: (url: string | null) => void;
+  vi.mocked(gitApi.openPr).mockReturnValue(new Promise((r) => (answer = r)));
+  renderDialog({ ...git, branch: "work" });
+  expect(screen.queryByRole("textbox", { name: "Description (optional)" })).toBeNull();
+  fireEvent.change(screen.getByRole("textbox", { name: "Title" }), { target: { value: "x" } });
+  expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
+  answer(null);
+  expect(await screen.findByRole("textbox", { name: "Description (optional)" })).toBeTruthy();
+});
+
+test("a draft that comes back after the dialog closed is not shown", async () => {
+  providers.list = [anthropic];
+  let answer!: (d: { title: string; body?: string }) => void;
+  vi.mocked(gitApi.draft).mockReturnValue(new Promise((r) => (answer = r)));
+  const onOpenChange = vi.fn();
+  renderDialog(git, onOpenChange);
+  fireEvent.click(screen.getByRole("button", { name: "Write with AI" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  answer({ title: "Late", body: "late" });
+  await new Promise((r) => setTimeout(r, 0));
+  expect((screen.getByRole("textbox", { name: "Title" }) as HTMLInputElement).value).toBe("");
 });

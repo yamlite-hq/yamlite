@@ -7,7 +7,7 @@ import { checkReferences } from "./references.ts";
 import { checkRequired } from "./required.ts";
 import { checkBounds, checkFormats } from "./rulecheck.ts";
 import { Store } from "./store.ts";
-import type { PageSpec, TableSpec } from "./types.ts";
+import type { AiInstructions, PageSpec, TableSpec } from "./types.ts";
 import { checkValues } from "./values.ts";
 import { startWatch, type Watcher, type WatchHandlers, type WatchOptions } from "./watch.ts";
 
@@ -33,6 +33,7 @@ export type { Watcher, WatchHandlers, WatchOptions } from "./watch.ts";
 export interface Yamlite {
   readonly tables: readonly TableSpec[];
   readonly pages: readonly PageSpec[];
+  readonly ai: AiInstructions;
   status(opts?: { tables?: string[] }): Promise<TableResult[]>;
   sync(opts?: { tables?: string[]; force?: boolean; forceConvert?: boolean }): Promise<TableResult[]>;
   watch(handlers?: WatchHandlers, options?: WatchOptions): Watcher;
@@ -106,6 +107,9 @@ export async function open(options: OpenOptions): Promise<Yamlite> {
     get pages() {
       return config.pages;
     },
+    get ai() {
+      return config.ai;
+    },
     async status(opts = {}) {
       if (closed) throw new Error("YAMLite is closed");
       const dbTime = store.lastWriteMs();
@@ -135,6 +139,7 @@ export async function open(options: OpenOptions): Promise<Yamlite> {
                 const next = resolveConfig(options);
                 config.tables = next.tables;
                 config.pages = next.pages;
+                config.ai = next.ai;
                 registerTables();
                 return config.tables;
               },

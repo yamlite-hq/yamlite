@@ -200,7 +200,8 @@ The UI is available in English and Japanese. It follows your browser language on
 When the data folder is in a git repository with an `origin` remote, the bottom of the sidebar shows the current branch and how many files under the data folder changed. **Send for review** lists the changed files by table and record, asks for a title and an optional description, and sends the files you keep checked:
 
 - On the default branch, it creates a branch with the name you enter, or `yamlite/review-<date>-<time>` when you leave it blank, commits the files there, pushes it and opens a draft pull request. The UI stays on the new branch, so later edits go to the same pull request.
-- On any other branch, it commits and pushes to that branch. If the branch already has an open pull request, it links to it; otherwise it opens a draft pull request.
+- On any other branch, it commits and pushes to that branch. If the branch already has an open pull request (`gh` tells), the dialog links to it and asks only for a commit message; otherwise it opens a draft pull request.
+- With [Ask AI](#ask-ai) set up, **Write with AI** drafts the title and description (or the commit message) from the records and files you keep checked, in the UI's language. A new pull request's description follows the repository's `pull_request_template.md` (in `.github/`, the root or `docs/`, as GitHub looks for it; a `PULL_REQUEST_TEMPLATE/` folder of several is not used), and then the [AI instructions](#ai-instructions). You can edit the draft before sending.
 - With [`gh`](https://cli.github.com) installed and logged in, the pull request is created for you. Without it, you get a GitHub link that opens the pull request form already filled in. For other hosts the branch is pushed and you open the pull request there.
 - Only files under the data folder are committed. Git runs without prompts, so pushing needs credentials that already work without asking.
 - Each record is listed under its file, with the fields it changed; the arrow shows them as committed and now. ↶ puts a changed or deleted record back as committed, and the bin removes a record that was never committed, after a second click. These go through the same writes as the form, so comments and the safety checks apply. **Put back** does it for the changed and deleted records of the checked files. The toast that follows can undo it. `yamlite.yaml`, pages and other files are listed but never changed.
@@ -224,6 +225,23 @@ Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` before `yamlite serve`, or enter a k
 - Push and pull use your own git setup (SSH keys or credential helper); YAMLite never asks for a password. Pushing and opening a pull request publish your data outside this machine.
 - If [GitHub CLI](https://cli.github.com) is installed and logged in, the pull request is created for you and linked in the chat. Without it, the card links to GitHub's pull request form with the title and body filled in.
 - Switching branches changes the YAML files, and the database follows them, like an edit in your editor, even when many records disappear. If a declared table's folder doesn't exist on the target branch, the switch still happens but the database sync fails, and the card says so.
+
+#### AI instructions
+
+`ai:` in `yamlite.yaml` tells the AI features what everyone working in the folder wants: the language to write in, what the data's values mean, how pull requests are written. Edit it in the file, or with the scroll button in the Ask AI panel or **Edit instructions** under **Write with AI**; a save there changes only these keys and leaves `yamlite.yaml` as a change to send like any other.
+
+```yaml
+ai:
+  # Ask AI and pull request drafts
+  instructions: |
+    Write in English.
+    In tasks, status todo means not started.
+  # pull request drafts only, after instructions
+  pullRequests: Start titles with a verb. Say why in the description.
+```
+
+- Each is text of at most 4,000 characters; an empty one counts as none. They come after YAMLite's own prompt and win where they differ, `pullRequests` last. Pages' AI does not get them: a page sends its own prompt.
+- They are read for every answer and draft, so a change applies at once.
 
 ## Pages
 

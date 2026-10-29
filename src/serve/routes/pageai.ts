@@ -76,7 +76,7 @@ function isNoKey(body: string | undefined): boolean {
   }
 }
 
-function modelError(e: unknown, provider: string): HttpError {
+export function modelError(e: unknown, provider: string): HttpError {
   const cause = RetryError.isInstance(e) ? e.lastError : e;
   if (cause instanceof HttpError) return cause;
   const message = cause instanceof Error ? cause.message : String(cause);

@@ -116,6 +116,14 @@ export interface TableSpec {
 
 export type PageAccess = "read" | "write";
 
+// what yamlite.yaml tells the AI features, on top of their own prompts; null when not given
+export interface AiInstructions {
+  // every feature that writes for the user: Ask AI and pull request drafts
+  instructions: string | null;
+  // pull request drafts only, after instructions
+  pullRequests: string | null;
+}
+
 export interface PageSpec {
   name: string;
   path: string;

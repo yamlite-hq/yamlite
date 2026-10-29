@@ -1,6 +1,13 @@
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { applySchema, configHash, type Rules, type RuleTarget, setTableGroup } from "../src/configfile.ts";
+import {
+  applyAiInstructions,
+  applySchema,
+  configHash,
+  type Rules,
+  type RuleTarget,
+  setTableGroup,
+} from "../src/configfile.ts";
 import { read, tmpRoot, write } from "./helpers.ts";
 
 function config(text: string) {
@@ -254,4 +261,28 @@ test("a view's own nested views are edited under it", () => {
 test("the hash follows the text", () => {
   expect(configHash("a")).toBe(configHash("a"));
   expect(configHash("a")).not.toBe(configHash("b"));
+});
+
+test("ai instructions are set with comments kept, several lines as a literal block", () => {
+  const text = "# data\ntables:\n  tasks: {} # todo list\n";
+  const next = applyAiInstructions(text, { instructions: "Write in English.\nBe brief.", pullRequests: "Say why." });
+  expect(next).toBe(
+    "# data\ntables:\n  tasks: {} # todo list\nai:\n  instructions: |-\n    Write in English.\n    Be brief.\n  pullRequests: Say why.\n",
+  );
+  expect(
+    applyAiInstructions(next as string, { instructions: "Write in English.\nBe brief.", pullRequests: "Say why." }),
+  ).toBeNull();
+});
+
+test("ai instructions set to null are removed, and so is the ai map once empty", () => {
+  const text = "tables: {}\nai:\n  instructions: A\n  pullRequests: B\n";
+  expect(applyAiInstructions(text, { instructions: "A", pullRequests: null })).toBe(
+    "tables: {}\nai:\n  instructions: A\n",
+  );
+  expect(applyAiInstructions(text, { instructions: null, pullRequests: null })).toBe("tables: {}\n");
+});
+
+test("multi-line instructions turn a flow ai map into a block map", () => {
+  const next = applyAiInstructions("ai: { pullRequests: Short }\n", { instructions: "A\nB", pullRequests: "Short" });
+  expect(next).toBe("ai:\n  pullRequests: Short\n  instructions: |-\n    A\n    B\n");
 });

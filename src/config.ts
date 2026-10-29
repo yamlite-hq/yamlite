@@ -19,6 +19,7 @@ import {
   type ExpandSpec,
   type IndexSpec,
   type PageAccess,
+  type AiInstructions,
   type PageSpec,
   type Reference,
   type TableSpec,
@@ -67,6 +68,7 @@ export interface ResolvedConfig {
   stateDir: string;
   tables: TableSpec[];
   pages: PageSpec[];
+  ai: AiInstructions;
 }
 
 export const CONFIG_NAMES = ["yamlite.yaml", "yamlite.yml"];
@@ -122,6 +124,7 @@ export type DeclaredTable = Omit<TableSpec, "path" | "mode" | "glob" | "captures
 export interface Config {
   tables: DeclaredTable[];
   pages: PageSpec[];
+  ai: AiInstructions;
 }
 
 class FolderPathError extends Error {}
@@ -321,7 +324,7 @@ const TABLE_KEYS = [
 
 function readRootConfig(root: string, text?: string): Config {
   const path = configPath(root) ?? (text === undefined ? null : "yamlite.yaml");
-  if (path === null) return { tables: [], pages: [] };
+  if (path === null) return { tables: [], pages: [], ai: NO_AI };
   return parseConfig(text ?? readFileSync(path, "utf8"), basename(path));
 }
 
@@ -329,7 +332,7 @@ function readRootConfig(root: string, text?: string): Config {
 // errors, as opening the folder; what only the folder can tell (a default place, a path that is a folder, page
 // access to a table found by convention) is checked when it is opened
 export function parseConfig(text: string, name = "yamlite.yaml"): Config {
-  let raw: { tables?: Record<string, RawTable | null>; pages?: unknown } | null;
+  let raw: { tables?: Record<string, RawTable | null>; pages?: unknown; ai?: unknown } | null;
   try {
     raw = parse(text);
   } catch (e) {
@@ -366,7 +369,25 @@ export function parseConfig(text: string, name = "yamlite.yaml"): Config {
     return { ...declared, location };
   });
   checkViewNames(tables.map((t) => ({ ...t, ...placeholder(t) })));
-  return { tables, pages: toPages(raw?.pages, (p) => p) };
+  return { tables, pages: toPages(raw?.pages, (p) => p), ai: toAi(raw?.ai) };
+}
+
+export const AI_INSTRUCTIONS_MAX = 4_000;
+const NO_AI: AiInstructions = { instructions: null, pullRequests: null };
+
+function toAi(raw: unknown): AiInstructions {
+  if (raw === undefined || raw === null) return NO_AI;
+  if (typeof raw !== "object" || Array.isArray(raw)) throw new Error("ai must be a map");
+  const { instructions, pullRequests, ...rest } = raw as Record<string, unknown>;
+  const unknown = Object.keys(rest)[0];
+  if (unknown !== undefined) throw new Error(`unknown key "ai.${unknown}"`);
+  const text = (key: string, v: unknown): string | null => {
+    if (v === undefined || v === null) return null;
+    if (typeof v !== "string") throw new Error(`ai.${key} must be text`);
+    if (v.length > AI_INSTRUCTIONS_MAX) throw new Error(`ai.${key} is longer than ${AI_INSTRUCTIONS_MAX} characters`);
+    return v.trim() === "" ? null : v.trim();
+  };
+  return { instructions: text("instructions", instructions), pullRequests: text("pullRequests", pullRequests) };
 }
 
 // a declared table as a spec with no files, for the checks that look at specs alone
@@ -847,6 +868,7 @@ export function resolveConfig(opts: OpenOptions, { requireConfig = true } = {}):
         config.pages.map((p) => ({ ...p, path: expandPath(p.path, root) })),
         tables,
       ),
+      ai: config.ai,
     };
   }
   if (!opts.db) throw new Error("either root or db is required");
@@ -861,5 +883,6 @@ export function resolveConfig(opts: OpenOptions, { requireConfig = true } = {}):
       ),
     ),
     pages: [],
+    ai: NO_AI,
   };
 }

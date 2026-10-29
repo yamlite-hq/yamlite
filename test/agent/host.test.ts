@@ -79,6 +79,23 @@ test("the system prompt holds the preamble and the notes", async () => {
   expect(JSON.stringify(prompt[0])).toContain("NOTE-1");
 });
 
+test("the repository's instructions close the system prompt, read on every turn", async () => {
+  const model = scripted([{ say: "ok" }, { say: "ok" }]);
+  let instructions: string | null = null;
+  const { host } = makeHost([model], { instructions: () => instructions });
+  const c = host.start({ provider: "anthropic" });
+  host.prompt(c.id, "hi");
+  await idle(c);
+  expect(JSON.stringify(model.doStreamCalls[0]?.prompt[0])).not.toContain("Instructions from the repository");
+  instructions = "Answer in English.";
+  host.prompt(c.id, "again");
+  await idle(c);
+  const system = (model.doStreamCalls[1]!.prompt[0] as { content: string }).content;
+  expect(system.endsWith("Instructions from the repository, which override the ones above:\nAnswer in English.")).toBe(
+    true,
+  );
+});
+
 test("queued feedback goes in front of the next user message", async () => {
   const model = scripted([{ say: "ok" }]);
   const queue = ["Proposal p1 was applied."];

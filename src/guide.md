@@ -169,3 +169,5 @@ Keys of a table under `tables:`. Details: https://github.com/yamlite-hq/yamlite#
 | `split`      | a column (declared in `columns`, not the key or body) or a field path whose values the sidebar lists under the table                                                            |
 
 The top-level `pages:` key adds custom pages to the web UI; see the README's Pages section.
+
+The top-level `ai:` key holds instructions for the AI features, each text of at most 4,000 characters: `instructions` for Ask AI and pull request drafts, `pullRequests` for pull request drafts only. See the README's AI instructions section.

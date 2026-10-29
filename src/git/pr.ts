@@ -49,3 +49,15 @@ export async function findOpenPr(repo: Repo, branch: string, gh: string | null):
     return null;
   }
 }
+
+const TEMPLATE_DIRS = [".github/", "", "docs/"];
+
+// the single pull request template GitHub uses, from the repository's paths, in the order GitHub looks;
+// a PULL_REQUEST_TEMPLATE/ folder of several is left out, since nothing tells which one a review wants
+export function templatePath(paths: readonly string[]): string | null {
+  for (const dir of TEMPLATE_DIRS) {
+    const found = paths.find((p) => p.toLowerCase() === `${dir}pull_request_template.md`);
+    if (found !== undefined) return found;
+  }
+  return null;
+}

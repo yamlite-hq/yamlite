@@ -1,7 +1,7 @@
 import { chmodSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, expect, test } from "vitest";
-import { compareUrl, openPr, parseGithubRemote } from "../../src/git/pr.ts";
+import { compareUrl, openPr, parseGithubRemote, templatePath } from "../../src/git/pr.ts";
 import { findRepo } from "../../src/git/repo.ts";
 import { git, useGitEnv, withRemote } from "../gitrepo.ts";
 import { dataRoot, tmpRoot, write } from "../helpers.ts";
@@ -58,4 +58,14 @@ test("openPr rejects gh output that is not an https URL", async () => {
   await expect(openPr((await findRepo(root))!, { base: "main", head: "x", title: "T", body: "B", gh })).rejects.toThrow(
     "gh did not print a pull request URL",
   );
+});
+
+test("templatePath picks the template GitHub would, in any case, and none from a folder of several", () => {
+  expect(templatePath(["README.md", "docs/pull_request_template.md", "PULL_REQUEST_TEMPLATE.md"])).toBe(
+    "PULL_REQUEST_TEMPLATE.md",
+  );
+  expect(templatePath([".github/Pull_Request_Template.md", "pull_request_template.md"])).toBe(
+    ".github/Pull_Request_Template.md",
+  );
+  expect(templatePath([".github/PULL_REQUEST_TEMPLATE/bug.md", "README.md"])).toBeNull();
 });

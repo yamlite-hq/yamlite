@@ -1,18 +1,19 @@
 import { join } from "node:path";
 import { commit, git, withRemote } from "../gitrepo.ts";
 import { dataRoot, write } from "../helpers.ts";
+import type { ServeOptions } from "../../src/serve/index.ts";
 import { type Served, startServe } from "./helpers.ts";
 
 export const CONFIG = "tables:\n  tasks:\n    columns:\n      title: TEXT\n  people:\n    columns:\n      name: TEXT\n";
 
-export async function repoServe(): Promise<{ t: Served; bare: string }> {
+export async function repoServe(opts: Partial<ServeOptions> = {}): Promise<{ t: Served; bare: string }> {
   const root = dataRoot();
   write(join(root, "yamlite.yaml"), CONFIG);
   write(join(root, "tasks/a.yaml"), "title: A\n");
   write(join(root, "tasks/b.yaml"), "title: B\n");
   write(join(root, "people.yaml"), "- id: 1\n  name: Alice\n");
   const bare = withRemote(root);
-  const t = await startServe({}, undefined, { root, gh: null });
+  const t = await startServe({}, undefined, { root, gh: null, ...opts });
   // serve fills in yamlite.yaml on start; that is not part of what the tests change
   commit(root, "config");
   git(root, "push", "-q");
