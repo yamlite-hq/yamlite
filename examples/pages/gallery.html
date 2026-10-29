@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en" data-yamlite-ui>
+  <head>
+    <meta charset="utf-8" />
+    <title>Gallery</title>
+    <style>
+      body {
+        font-size: 16px;
+        line-height: 1.6;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 16px;
+      }
+      figure {
+        margin: 0;
+        background: var(--y-panel);
+        border: 1px solid var(--y-line);
+        border-radius: 8px;
+        padding: 8px;
+      }
+      img {
+        display: block;
+        width: 100%;
+        height: 160px;
+        object-fit: contain;
+        background: var(--y-bg);
+        border-radius: 4px;
+      }
+      figcaption {
+        margin-top: 8px;
+        font-size: 16px;
+        overflow-wrap: anywhere;
+      }
+      .error {
+        color: var(--y-err);
+        margin-bottom: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="error" class="error" hidden></div>
+    <div id="grid" class="grid"></div>
+    <script>
+      // fit these to your table; IMAGE holds a path under the page's `files`
+      const TABLE = "photos";
+      const IMAGE = "image";
+      const TITLE = "title";
+
+      const grid = document.getElementById("grid");
+      const error = document.getElementById("error");
+      const urls = [];
+
+      function showError(message) {
+        error.textContent = message;
+        error.hidden = !message;
+      }
+
+      async function load() {
+        const { rows } = await yamlite.rows(TABLE, { limit: 500 });
+        urls.splice(0).forEach((url) => URL.revokeObjectURL(url));
+        const cards = rows.map((row) => {
+          const figure = document.createElement("figure");
+          const img = document.createElement("img");
+          const caption = document.createElement("figcaption");
+          img.alt = row[TITLE] ?? "";
+          caption.textContent = row[TITLE] ?? row[IMAGE] ?? "";
+          figure.append(img, caption);
+          if (row[IMAGE]) {
+            yamlite
+              .file(row[IMAGE])
+              .then((blob) => {
+                const url = URL.createObjectURL(blob);
+                urls.push(url);
+                img.src = url;
+              })
+              .catch((e) => showError(`${row[IMAGE]}: ${e.message}`));
+          }
+          return figure;
+        });
+        grid.replaceChildren(...cards);
+      }
+
+      yamlite.on("change", () => void load().catch((e) => showError(e.message)));
+      yamlite.ready.then(load).catch((e) => showError(e.message));
+    </script>
+  </body>
+</html>

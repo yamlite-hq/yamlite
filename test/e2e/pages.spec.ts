@@ -1,9 +1,10 @@
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 import { file, type Running, start, stop } from "./app.ts";
 
 const KANBAN = readFileSync(resolve(import.meta.dirname, "../../examples/pages/kanban.html"), "utf8");
+const GALLERY = readFileSync(resolve(import.meta.dirname, "../../examples/pages/gallery.html"), "utf8");
 
 let app: Running | undefined;
 test.afterEach(async () => {
@@ -167,4 +168,25 @@ test("an app keeps where its page stands in the address, through reload and back
   await page.waitForTimeout(300);
   expect(new URL(page.url()).pathname).toBe("/-/apps/board/");
   await expect(frame.locator("#at")).toHaveText("at /orders/42");
+});
+
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+test("the gallery page shows a declared image through yamlite.file", async ({ page }) => {
+  app = await launch({
+    "yamlite.yaml": `tables: {}\npages:\n  gallery:\n    path: .pages/gallery.html\n    title: Gallery\n    access: { photos: read }\n    files: [.images/]\n`,
+    ".pages/gallery.html": GALLERY,
+    "photos/a.yaml": "title: Sunrise\nimage: .images/a.png\n",
+    "photos/b.yaml": "title: Hidden\nimage: secret/b.png\n",
+  });
+  mkdirSync(join(app.root, ".images"), { recursive: true });
+  writeFileSync(join(app.root, ".images/a.png"), PNG);
+  await page.goto(`${app.url}#/p/gallery`);
+  const frame = page.frameLocator('iframe[title="Gallery"]');
+  const img = frame.getByRole("img", { name: "Sunrise" });
+  await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
+  await expect(frame.locator("#error")).toContainText("secret/b.png");
 });
