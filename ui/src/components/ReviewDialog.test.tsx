@@ -32,6 +32,7 @@ const git: GitState = {
   defaultBranch: "main",
   upstream: "origin/main",
   namesBranch: true,
+  restoresDefault: false,
   changes: [
     {
       path: "people.yaml",

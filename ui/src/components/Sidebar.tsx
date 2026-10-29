@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronRight,
   GitBranch,
+  History,
   Layers,
   LayoutDashboard,
   ListFilter,
@@ -34,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { m } from "@/paraglide/messages.js";
 import { Logo } from "./Logo";
 import { ReviewDialog } from "./ReviewDialog";
+import { RestoreDefaultDialog } from "./RestoreDefaultDialog";
 
 const item =
   "flex items-center gap-2 rounded-md px-2.5 py-1.5 mx-1.5 text-[13px] hover:bg-panel-2 max-md:py-2.5 max-md:text-[15px]";
@@ -320,6 +322,7 @@ function RootInfo() {
 export function GitFooter() {
   const git = useGit();
   const [open, setOpen] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   if (!git) return null;
   const count = git.changes.length;
   return (
@@ -348,7 +351,20 @@ export function GitFooter() {
         <ArrowUp className="size-3.5" />
         {m.git_send_review()}
       </button>
+      {git.restoresDefault && git.defaultBranch && (
+        <button
+          type="button"
+          className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-md border bg-background py-1.5 text-[13px] text-muted-foreground hover:text-foreground max-md:py-2.5 max-md:text-[15px]"
+          onClick={() => setRestoring(true)}
+        >
+          <History className="size-3.5" />
+          <span className="truncate">{m.git_restore_default({ branch: git.defaultBranch })}</span>
+        </button>
+      )}
       {open && <ReviewDialog git={git} open={open} onOpenChange={setOpen} />}
+      {restoring && git.defaultBranch && (
+        <RestoreDefaultDialog branch={git.defaultBranch} open={restoring} onOpenChange={setRestoring} />
+      )}
     </div>
   );
 }

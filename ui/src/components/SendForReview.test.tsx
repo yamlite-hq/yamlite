@@ -17,6 +17,7 @@ const edited: GitState = {
   defaultBranch: "main",
   upstream: null,
   namesBranch: false,
+  restoresDefault: false,
   changes: [{ path: "tasks/a.yaml", status: "modified", table: "tasks", records: null }],
 };
 
@@ -50,5 +51,12 @@ test("the dialog stays to show where the changes went once a send empties the co
     </QueryClientProvider>,
   );
   expect(screen.getByRole("link", { name: "Open the review" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Send for review" })).toBeNull();
+});
+
+test("a review branch offers the restore even with nothing to send", () => {
+  state = { ...edited, branch: "work", restoresDefault: true, changes: [] };
+  show();
+  expect(screen.getByRole("button", { name: "Restore from main" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Send for review" })).toBeNull();
 });

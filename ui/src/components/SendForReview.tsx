@@ -1,18 +1,32 @@
 import { useState } from "react";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, History } from "lucide-react";
 import { useGit } from "@/lib/git";
 import { isReadOnly } from "@/lib/mode";
 import { m } from "@/paraglide/messages.js";
+import { RestoreDefaultDialog } from "./RestoreDefaultDialog";
 import { ReviewDialog } from "./ReviewDialog";
 
-// the app's way to send its edits: shown only once there is something to send. The dialog stays open after a send
-// empties the count, so it can show where the changes went
+// the app's way to send its edits: shown only once there is something to send, or on a review that can be put back
+// as the default branch has it. The dialog stays open after a send empties the count, so it can show where the
+// changes went
 export function SendForReview() {
   const git = useGit();
   const [open, setOpen] = useState(false);
-  if (isReadOnly() || !git || (git.changes.length === 0 && !open)) return null;
+  const [restoring, setRestoring] = useState(false);
+  const restorable = git?.restoresDefault === true && git.defaultBranch !== null;
+  if (isReadOnly() || !git || (git.changes.length === 0 && !open && !restorable)) return null;
   return (
     <div className="flex shrink-0 items-center gap-2.5">
+      {restorable && (
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-[13px] text-muted-foreground hover:text-foreground"
+          onClick={() => setRestoring(true)}
+        >
+          <History className="size-3.5" />
+          {m.git_restore_default({ branch: git.defaultBranch ?? "" })}
+        </button>
+      )}
       {git.changes.length > 0 && (
         <>
           <span className="text-[13px] text-muted-foreground">{m.git_changes({ count: git.changes.length })}</span>
@@ -28,6 +42,9 @@ export function SendForReview() {
         </>
       )}
       {open && <ReviewDialog git={git} open={open} onOpenChange={setOpen} />}
+      {restoring && git.defaultBranch && (
+        <RestoreDefaultDialog branch={git.defaultBranch} open={restoring} onOpenChange={setRestoring} />
+      )}
     </div>
   );
 }

@@ -1,12 +1,12 @@
 import { NoRepository, ReviewRefused } from "../../git/driver.ts";
 import type { ReviewRequest } from "../../git/review.ts";
 import { existsSync, lstatSync, mkdirSync, rmSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { writeAtomic } from "../../fsutil.ts";
 import { canonical } from "../../hash.ts";
 import { own, type Rec } from "../../types.ts";
 import { tableSpec } from "../context.ts";
-import { headRecord, type RecordChange, recordChanges } from "../gitrecords.ts";
+import { headRecord, ownerOf, type RecordChange, recordChanges } from "../gitrecords.ts";
 import { deleteRecord, insertRecord, readRecord, updateRecord } from "../records.ts";
 import { wireValue } from "../wire.ts";
 import { HttpError } from "../http.ts";
@@ -40,15 +40,78 @@ export const gitRoutes: Routes = (router, ctx) => {
       })),
     );
     changes.sort((a, b) => a.path.localeCompare(b.path));
+    const defaultBranch = await git.defaultBranch();
     return {
       git: {
         branch: status.branch,
-        defaultBranch: await git.defaultBranch(),
+        defaultBranch,
         upstream: status.upstream,
         namesBranch: git.namesBranch === true,
+        // the files can be put back as the default branch has them; the list comes from /api/git/default
+        restoresDefault:
+          git.defaultBranchFiles !== undefined &&
+          status.branch !== null &&
+          defaultBranch !== null &&
+          status.branch !== defaultBranch,
         changes,
       },
     };
+  });
+
+  // the files the review changes from the default branch; unsent: the file also has edits not sent yet
+  router.add("GET", "/api/git/default", async () => {
+    const from = ctx.git?.defaultBranchFiles;
+    if (!from) throw new HttpError(404, "this host cannot read the default branch");
+    const [changes, status] = await Promise.all([from.changes().catch(notFound), ctx.git!.status()]);
+    const unsent = new Set(status.changes.map((c) => c.path));
+    return {
+      files: changes
+        .map((c) => ({
+          path: c.path,
+          status: c.status,
+          table: ownerOf(ctx.y.tables, join(ctx.root, c.path))?.spec.name ?? null,
+          unsent: unsent.has(c.path),
+        }))
+        .sort((a, b) => a.path.localeCompare(b.path)),
+    };
+  });
+
+  // writes the chosen files as the default branch has them, or removes those it has not; they become unsent edits
+  router.add("POST", "/api/git/restore-default", async ({ body }) => {
+    const from = ctx.git?.defaultBranchFiles;
+    if (!from) throw new HttpError(404, "this host cannot read the default branch");
+    const paths = objectBody(body, "body").files;
+    if (!Array.isArray(paths) || paths.length === 0 || paths.some((p) => typeof p !== "string"))
+      throw new HttpError(400, "choose at least one file", { field: "files" });
+    return ctx.proposals.exclusive(async () => {
+      const changed = new Set((await from.changes().catch(notFound)).map((c) => c.path));
+      const files = await Promise.all(
+        (paths as string[]).map(async (path) => {
+          const file = resolve(ctx.root, path);
+          const rel = relative(ctx.root, file);
+          if (rel === "" || rel.startsWith("..") || isAbsolute(rel))
+            throw new HttpError(400, `${path} is outside the data folder`);
+          if (!changed.has(path)) throw new HttpError(400, `${path} is the same as on the default branch`);
+          const content = await from.file(path).catch(notFound);
+          if (content === null && existsSync(file) && lstatSync(file).isDirectory())
+            throw new HttpError(409, `${path} is a folder; remove it with git`);
+          return { path, file, content };
+        }),
+      );
+      // UI edits reach the files first, so a later sync does not write them over the restored files
+      assertSynced(await ctx.y.sync(), "could not write the latest edits to files for", "; nothing was restored");
+      for (const f of files) {
+        if (f.content === null) rmSync(f.file, { force: true });
+        else {
+          mkdirSync(dirname(f.file), { recursive: true });
+          writeAtomic(f.file, f.content);
+        }
+      }
+      if (files.some((f) => f.file === resolve(ctx.configFile))) ctx.reloadConfig();
+      // these files were written on purpose, so a table left with fewer records is not a wipe
+      assertSynced(await ctx.y.sync({ force: true }), "the database could not follow the files for");
+      return { files: files.map((f) => f.path) };
+    });
   });
 
   // the field values behind one changed file's records, fetched when the UI shows them

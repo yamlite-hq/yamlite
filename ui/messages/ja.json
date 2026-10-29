@@ -625,5 +625,38 @@
         "n=other": "{count} 件を戻す（取り消せません）"
       }
     }
+  ],
+  "git_restore_default": "{branch} の内容に戻す",
+  "restore_title": "{branch} の内容に戻す",
+  "restore_description": "このレビューで変更したファイルを選ぶと、{branch} の内容に書き戻します。{branch} にないファイルは削除します。書き戻した内容は通常の編集と同じく、送信するとこのレビューにコミットとして追加されます。",
+  "restore_none": "このレビューには {branch} から変更したファイルがありません。",
+  "restore_unsent": "未送信の編集あり",
+  "restore_submit": [
+    {
+      "declarations": ["input count", "local n = count: plural"],
+      "selectors": ["n"],
+      "match": {
+        "n=other": "{count} 件を戻す"
+      }
+    }
+  ],
+  "restore_submit_confirm": [
+    {
+      "declarations": ["input count", "local n = count: plural"],
+      "selectors": ["n"],
+      "match": {
+        "n=other": "{count} 件を戻す（未送信の編集は失われます）"
+      }
+    }
+  ],
+  "restore_restoring": "戻しています…",
+  "restore_done": [
+    {
+      "declarations": ["input count", "local n = count: plural"],
+      "selectors": ["n"],
+      "match": {
+        "n=other": "{count} 件を {branch} の内容に戻しました。送信するとレビューに追加されます"
+      }
+    }
   ]
 }

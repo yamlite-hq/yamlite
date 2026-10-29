@@ -40,7 +40,18 @@ export interface GitState {
   upstream: string | null;
   // the host takes a branch name for a new review
   namesBranch: boolean;
+  // on a review branch whose files can be put back as the default branch has them
+  restoresDefault: boolean;
   changes: GitChange[];
+}
+
+// a file the review changes from the default branch
+export interface DefaultChange {
+  path: string;
+  status: ChangeKind;
+  table: string | null;
+  // the file also has edits not sent yet, which putting it back loses
+  unsent: boolean;
 }
 
 export interface ReviewResult {
@@ -66,6 +77,9 @@ export const gitApi = {
   // files: paths of changed files that are not records, written back as committed or removed when never committed
   revert: (body: { records: Array<{ table: string; key: string; delete?: boolean }>; files: string[] }) =>
     request<{ reverted: Reverted[]; files: string[] }>("POST", "/api/git/revert", body),
+  defaultChanges: () => request<{ files: DefaultChange[] }>("GET", "/api/git/default").then((r) => r.files),
+  // the files go back as the default branch has them, or are removed when it has none, as edits to send
+  restoreDefault: (files: string[]) => request<{ files: string[] }>("POST", "/api/git/restore-default", { files }),
 };
 
 // puts reverted records back the way they were before the revert, through the same writes as the forms
@@ -91,8 +105,10 @@ export function useGit(): GitState | null {
 }
 
 // the changes grouped by table; files outside every table (yamlite.yaml, pages) come last under null
-export function groupChanges(changes: GitChange[]): Array<{ table: string | null; changes: GitChange[] }> {
-  const groups = new Map<string | null, GitChange[]>();
+export function groupChanges<C extends { table: string | null }>(
+  changes: C[],
+): Array<{ table: string | null; changes: C[] }> {
+  const groups = new Map<string | null, C[]>();
   for (const c of changes) groups.set(c.table, [...(groups.get(c.table) ?? []), c]);
   return [...groups.entries()]
     .sort(([a], [b]) => (a === null ? 1 : b === null ? -1 : a.localeCompare(b)))
