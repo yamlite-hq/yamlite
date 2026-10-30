@@ -38,9 +38,21 @@ jobs:
         with:
           generate_release_notes: true
 
-      - name: Rebuild yamlite.com
+      # The site builds its docs from the latest release. A GitHub App scoped to the site's repository
+      # (SITE_REPO, in this owner) asks it to rebuild; a failure here never fails the release.
+      - id: site-token
         continue-on-error: true
         if: vars.SITE_REPO != ''
-        run: gh api "repos/${{ vars.SITE_REPO }}/dispatches" -f event_type=yamlite-release
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.SITE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SITE_APP_PRIVATE_KEY }}
+          repositories: ${{ vars.SITE_REPO }}
+
+      - name: Rebuild yamlite.com
+        continue-on-error: true
+        if: steps.site-token.outputs.token != ''
+        run: gh api "repos/${GITHUB_REPOSITORY_OWNER}/${SITE_REPO}/dispatches" -f event_type=yamlite-release
         env:
-          GH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+          GH_TOKEN: ${{ steps.site-token.outputs.token }}
+          SITE_REPO: ${{ vars.SITE_REPO }}
