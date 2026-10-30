@@ -24,15 +24,15 @@ test("meta lists pages with their permissions and a root-relative path", async (
       access: { tasks: "write" },
       sql: true,
       network: ["https://cdn.example.com"],
-      files: [],
+      files: {},
       ai: null,
     },
   ]);
 });
 
-test("meta lists the files a page may read", async () => {
-  t = await startServe(FILES, CONFIG + "    files: [.evidence/]\n");
-  expect((await t.api("/api/meta")).body.pages[0].files).toEqual([".evidence/"]);
+test("meta lists the files a page may read or write", async () => {
+  t = await startServe(FILES, CONFIG + "    files: { .evidence/: read }\n");
+  expect((await t.api("/api/meta")).body.pages[0].files).toEqual({ ".evidence/": "read" });
 });
 
 test("the html route returns the page's file", async () => {

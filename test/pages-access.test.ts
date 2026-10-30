@@ -2,17 +2,20 @@ import { expect, test } from "vitest";
 import {
   accessBrief,
   accessSummary,
+  bytesMatchType,
   canRead,
   canWrite,
   contentTypeOf,
   DENIED_FILES,
   deniedFile,
   fileGranted,
+  fileWritable,
   normalizeFilePath,
   notInAccess,
   type PageRules,
   pageCsp,
   trustedViews,
+  writableType,
   writesAnything,
 } from "../src/pages/access.ts";
 
@@ -21,7 +24,7 @@ const page = (access: PageRules["access"], extra: Partial<PageRules> = {}): Page
   access,
   sql: false,
   network: [],
-  files: [],
+  files: {},
   ai: null,
   ...extra,
 });
@@ -99,10 +102,34 @@ test("the summary and brief mention AI when the page has it", () => {
 });
 
 test("a folder entry grants what is under it, a file entry only itself", () => {
-  expect(fileGranted([".evidence/"], ".evidence/a/b.png")).toBe(true);
-  expect(fileGranted([".evidence/"], ".evidence-private/a.png")).toBe(false);
-  expect(fileGranted([".evidence"], ".evidence/a.png")).toBe(false);
-  expect(fileGranted(["a.png"], "a.png")).toBe(true);
+  expect(fileGranted({ ".evidence/": "read" }, ".evidence/a/b.png")).toBe(true);
+  expect(fileGranted({ ".evidence/": "read" }, ".evidence-private/a.png")).toBe(false);
+  expect(fileGranted({ ".evidence": "read" }, ".evidence/a.png")).toBe(false);
+  expect(fileGranted({ "a.png": "read" }, "a.png")).toBe(true);
+});
+
+test("only a write entry lets a page write, and a write entry also grants reading", () => {
+  const files = { "shots/": "write", "docs/": "read" } as const;
+  expect(fileWritable(files, "shots/a.png")).toBe(true);
+  expect(fileWritable(files, "docs/a.png")).toBe(false);
+  expect(fileGranted(files, "shots/a.png")).toBe(true);
+});
+
+test("a write needs one of the writable types, and bytes that are that type", () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]);
+  expect(writableType("a.png")).toBe(true);
+  expect(writableType("a.PDF")).toBe(true);
+  expect(writableType("a.svg")).toBe(false);
+  expect(writableType("a.html")).toBe(false);
+  expect(writableType("a.txt")).toBe(false);
+  expect(bytesMatchType("a.png", png)).toBe(true);
+  expect(bytesMatchType("a.jpg", png)).toBe(false);
+  expect(bytesMatchType("a.png", new TextEncoder().encode("<svg onload=alert(1)>"))).toBe(false);
+});
+
+test("a page that writes only files is not read-only", () => {
+  expect(writesAnything(page({}, { files: { "shots/": "write" } }))).toBe(true);
+  expect(writesAnything(page({}, { files: { "shots/": "read" } }))).toBe(false);
 });
 
 test("normalizeFilePath collapses . and empty segments and refuses escapes", () => {
@@ -144,7 +171,7 @@ test("contentTypeOf goes by extension, case-insensitively", () => {
 });
 
 test("files show in the summary and as a count in the brief", () => {
-  expect(accessSummary(page({}, { files: [".evidence/"] }))).toContain("files: .evidence/");
-  expect(accessBrief(page({}, { files: [".evidence/"] }))).toContain("1 file entry");
-  expect(accessBrief(page({}, { files: [".evidence/", "a.png"] }))).toContain("2 file entries");
+  expect(accessSummary(page({}, { files: { ".evidence/": "read" } }))).toContain("files: .evidence/: read");
+  expect(accessBrief(page({}, { files: { ".evidence/": "read" } }))).toContain("1 file entry");
+  expect(accessBrief(page({}, { files: { ".evidence/": "read", "a.png": "write" } }))).toContain("2 file entries");
 });

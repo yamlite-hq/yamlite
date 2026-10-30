@@ -24,6 +24,8 @@ export function invalidationsFor(e: ServeEvent | { type: "hello" }): QueryKey[] 
       return [["meta"], ["page"], ["schema"], ["git"], ["gitdiff"]];
     case "page":
       return e.pages.map((name) => ["page", name]);
+    case "files":
+      return [["git"], ["gitdiff"]];
     case "conflict":
       return [["conflicts"]];
     case "error":

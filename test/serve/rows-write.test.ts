@@ -47,6 +47,22 @@ test("a stale base is refused with the current values", async () => {
   expect(res.body).toMatchObject({ stale: ["title"], current: { id: "a", title: "A" } });
 });
 
+test("an update without a base is not checked", async () => {
+  t = await startServe({ "tasks/a.yaml": "title: A\n" });
+  expect((await t.api(rowsUrl("a"), { method: "PATCH", body: { values: { title: "Z" } } })).status).toBe(200);
+  await waitFor(() => read(file(t!, "tasks/a.yaml")) === "title: Z\n");
+});
+
+test("a delete with a stale base is refused, and one without a base is not checked", async () => {
+  t = await startServe({ "tasks/a.yaml": "title: A\nn: 1\n" });
+  const del = (body: unknown) => t!.api(rowsUrl("a"), { method: "DELETE", body });
+  const stale = await del({ base: { title: "old" } });
+  expect(stale).toMatchObject({ status: 409, body: { stale: ["title"], current: { title: "A" } } });
+  expect((await del({ base: { title: "A" } })).status).toBe(200);
+  await waitFor(() => !existsSync(file(t!, "tasks/a.yaml")));
+  expect((await del({ base: { title: "A" } })).status).toBe(404);
+});
+
 test("a file edit while the drawer is open makes the save stale", async () => {
   t = await startServe({ "tasks/a.yaml": "title: A\n" });
   const before = (await t.api(rowsUrl("a"))).body.row;

@@ -15,7 +15,7 @@ const board: PageMeta = {
   access: { tasks: "write", people: "read", tasks__tags: "read" },
   sql: false,
   network: [],
-  files: [],
+  files: {},
   ai: null,
 };
 
@@ -39,6 +39,8 @@ function setup(
         throw new Error("not set");
       }),
       pageFile: vi.fn(async (_page: string, path: string) => new Blob([path], { type: "image/png" })),
+      pageWriteFile: vi.fn(async () => ({ sha256: "" })),
+      pageDeleteFile: vi.fn(async () => ({ ok: true as const })),
     },
     ai,
     readOnly,
@@ -81,7 +83,7 @@ test("hello describes the page", async () => {
     access: board.access,
     sql: false,
     network: [],
-    files: [],
+    files: {},
     readOnly: false,
     ai: null,
   });
@@ -111,10 +113,17 @@ test("writes need write access", async () => {
   expect((await ask("update", "people", "p", { name: "x" }, { name: "y" })).error.message).toBe(
     "people is read-only for this page",
   );
-  expect(await ask("update", "tasks", "a", { status: "done" }, { status: "todo" })).toMatchObject({ ok: true });
+  expect(await ask("update", "tasks", "a", { status: "done" }, { base: { status: "todo" } })).toMatchObject({
+    ok: true,
+  });
   expect(deps.api.update).toHaveBeenCalledWith("tasks", "a", { status: "done" }, { status: "todo" });
+  await ask("update", "tasks", "a", { status: "done" });
+  expect(deps.api.update).toHaveBeenLastCalledWith("tasks", "a", { status: "done" }, undefined);
   expect(await ask("create", "tasks", "n", { title: "N" })).toMatchObject({ ok: true, value: { key: "n" } });
-  expect(await ask("remove", "tasks", "a")).toMatchObject({ ok: true });
+  expect(await ask("remove", "tasks", "a", { base: { status: "todo" } })).toMatchObject({ ok: true });
+  expect(deps.api.remove).toHaveBeenCalledWith("tasks", "a", { status: "todo" });
+  await ask("remove", "tasks", "a");
+  expect(deps.api.remove).toHaveBeenLastCalledWith("tasks", "a", undefined);
 });
 
 test("a read-only deployment refuses writes even with write access", async () => {
@@ -132,7 +141,7 @@ test("a conflict comes back with its current and stale fields", async () => {
       stale: ["status"],
     }),
   );
-  expect((await ask("update", "tasks", "a", { status: "done" }, { status: "todo" })).error).toEqual({
+  expect((await ask("update", "tasks", "a", { status: "done" }, { base: { status: "todo" } })).error).toEqual({
     status: 409,
     message: "changed since it was loaded: status",
     extra: { current: { status: "doing" }, stale: ["status"] },
@@ -151,26 +160,26 @@ test("get and open take tables, not views", async () => {
 });
 
 test("file reads only what the page's files grant", async () => {
-  const { ask, deps } = setup({ ...board, files: [".evidence/"] });
-  expect((await ask("file", ".evidence-private/s.png")).error).toEqual({
+  const { ask, deps } = setup({ ...board, files: { ".evidence/": "read" } });
+  expect((await ask("readFile", ".evidence-private/s.png")).error).toEqual({
     status: 403,
     message: ".evidence-private/s.png is not in this page's files",
     extra: {},
   });
-  expect((await ask("file", ".evidence/../secret.txt")).error).toMatchObject({ status: 403 });
-  expect((await ask("file", "yamlite.yaml")).error).toMatchObject({ status: 403 });
+  expect((await ask("readFile", ".evidence/../secret.txt")).error).toMatchObject({ status: 403 });
+  expect((await ask("readFile", "yamlite.yaml")).error).toMatchObject({ status: 403 });
   expect(deps.api.pageFile).not.toHaveBeenCalled();
-  const answer = await ask("file", ".evidence//a.png");
+  const answer = await ask("readFile", ".evidence//a.png");
   expect(deps.api.pageFile).toHaveBeenCalledWith("board", ".evidence/a.png");
   expect(answer.value).toBeInstanceOf(Blob);
   expect(await (answer.value as Blob).text()).toBe(".evidence/a.png");
 });
 
 test("many files asked at once each come back as their own", async () => {
-  const { host, frame, posted } = setup({ ...board, files: [".evidence/"] });
+  const { host, frame, posted } = setup({ ...board, files: { ".evidence/": "read" } });
   const paths = Array.from({ length: 50 }, (_, i) => `.evidence/${i}.png`);
   paths.forEach((path, i) =>
-    host.handle({ source: frame, data: { yamlite: 1, id: i + 1, method: "file", args: [path] } } as MessageEvent),
+    host.handle({ source: frame, data: { yamlite: 1, id: i + 1, method: "readFile", args: [path] } } as MessageEvent),
   );
   await vi.waitFor(() => expect(posted.filter((m) => "ok" in m)).toHaveLength(50));
   const texts = await Promise.all(paths.map((_, i) => (posted.find((m) => m.id === i + 1)!.value as Blob).text()));
@@ -178,7 +187,54 @@ test("many files asked at once each come back as their own", async () => {
 });
 
 test("hello tells the page its files", async () => {
-  expect((await setup({ ...board, files: [".evidence/"] }).ask("hello")).value.files).toEqual([".evidence/"]);
+  const files = { ".evidence/": "write" } as const;
+  expect((await setup({ ...board, access: {}, files }).ask("hello")).value).toMatchObject({ files, readOnly: false });
+});
+
+const sha256 = async (text: string) =>
+  Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+
+test("writeFile sends the bytes as base64 with the base's hash, only where the page may write", async () => {
+  const { ask, deps } = setup({ ...board, files: { "shots/": "write", "docs/": "read" } });
+  vi.mocked(deps.api.pageWriteFile).mockResolvedValueOnce({ sha256: "f".repeat(64) });
+  expect(await ask("writeFile", "shots//a.png", new Blob(["hi"]), { base: new Blob(["old"]) })).toMatchObject({
+    ok: true,
+    value: { sha256: "f".repeat(64) },
+  });
+  expect(deps.api.pageWriteFile).toHaveBeenCalledWith("board", "shots/a.png", btoa("hi"), await sha256("old"));
+  await ask("writeFile", "shots/b.png", new Blob(["x"]), { base: null });
+  expect(deps.api.pageWriteFile).toHaveBeenLastCalledWith("board", "shots/b.png", btoa("x"), null);
+  await ask("writeFile", "shots/c.png", new Blob(["x"]));
+  expect(deps.api.pageWriteFile).toHaveBeenLastCalledWith("board", "shots/c.png", btoa("x"), undefined);
+  await ask("writeFile", "shots/d.png", new Blob(["x"]), { base: "a".repeat(64) });
+  expect(deps.api.pageWriteFile).toHaveBeenLastCalledWith("board", "shots/d.png", btoa("x"), "a".repeat(64));
+  vi.mocked(deps.api.pageWriteFile).mockClear();
+  expect((await ask("writeFile", "docs/a.png", new Blob(["x"]))).error).toMatchObject({
+    status: 403,
+    message: "docs/a.png is not in the files this page may write",
+  });
+  expect((await ask("writeFile", "shots/", new Blob(["x"]))).error).toMatchObject({ status: 403 });
+  expect((await ask("writeFile", "shots/a.png", "text")).error).toMatchObject({
+    status: 400,
+    message: "data must be a Blob",
+  });
+  expect((await ask("writeFile", "shots/a.png", new Blob(["x"]), { base: "abc" })).error).toMatchObject({
+    status: 400,
+  });
+  expect(deps.api.pageWriteFile).not.toHaveBeenCalled();
+});
+
+test("deleteFile checks the same grant, and neither writes in a read-only host", async () => {
+  const page = { ...board, files: { "shots/": "write" } } as const;
+  const { ask, deps } = setup(page);
+  expect(await ask("deleteFile", "shots/a.png", { base: new Blob(["old"]) })).toMatchObject({ ok: true });
+  expect(deps.api.pageDeleteFile).toHaveBeenCalledWith("board", "shots/a.png", await sha256("old"));
+  const ro = setup(page, true);
+  expect((await ro.ask("writeFile", "shots/a.png", new Blob(["x"]))).error).toMatchObject({ status: 403 });
+  expect((await ro.ask("deleteFile", "shots/a.png")).error).toMatchObject({ status: 403 });
+  expect(ro.deps.api.pageWriteFile).not.toHaveBeenCalled();
 });
 
 test("sql needs the sql permission", async () => {
@@ -208,7 +264,14 @@ test("a change to a table reaches the page with its views, if the page reads the
   const { host, posted } = setup();
   host.notify(["tasks"]);
   host.notify(["secret"]);
-  expect(posted).toEqual([{ yamlite: 1, event: "change", data: { tables: ["tasks", "tasks__tags"] } }]);
+  expect(posted).toEqual([{ yamlite: 1, event: "change", data: { tables: ["tasks", "tasks__tags"], files: [] } }]);
+});
+
+test("a change to a file reaches the page only if its files cover it", () => {
+  const { host, posted } = setup({ ...board, files: { "shots/": "read" } });
+  host.filesChanged(["shots/a.png", "secret.txt"]);
+  host.filesChanged(["secret.txt"]);
+  expect(posted).toEqual([{ yamlite: 1, event: "change", data: { tables: [], files: ["shots/a.png"] } }]);
 });
 
 test("blocked urls are forwarded without an answer", () => {

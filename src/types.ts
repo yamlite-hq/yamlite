@@ -133,8 +133,8 @@ export interface PageSpec {
   sql: boolean;
   // origins the page may load from and connect to
   network: string[];
-  // root-relative folders (ending in /) and files the page may read
-  files: string[];
+  // root-relative folders (ending in /) and files the page may read, or also write
+  files: Record<string, PageAccess>;
   // null: the page cannot ask AI
   ai: { maxOutputTokens: number } | null;
 }

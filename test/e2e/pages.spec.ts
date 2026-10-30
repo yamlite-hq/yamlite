@@ -177,7 +177,7 @@ const PNG = Buffer.from(
 
 test("the gallery page shows a declared image through yamlite.file", async ({ page }) => {
   app = await launch({
-    "yamlite.yaml": `tables: {}\npages:\n  gallery:\n    path: .pages/gallery.html\n    title: Gallery\n    access: { photos: read }\n    files: [.images/]\n`,
+    "yamlite.yaml": `tables: {}\npages:\n  gallery:\n    path: .pages/gallery.html\n    title: Gallery\n    access: { photos: read }\n    files: { .images/: read }\n`,
     ".pages/gallery.html": GALLERY,
     "photos/a.yaml": "title: Sunrise\nimage: .images/a.png\n",
     "photos/b.yaml": "title: Hidden\nimage: secret/b.png\n",

@@ -96,19 +96,14 @@ export const rowRoutes: Routes = (router, ctx) => {
     const key = params.key as string;
     const b = objectBody(body, "body");
     const values = objectBody(b.values, "values");
-    const base = objectBody(b.base, "base");
+    const base = baseOf(b.base);
     noKeyIn(spec, values, "rename the record instead");
     const { store } = ctx;
     writeTx(store, () => {
       const current = readRecord(store, spec, key);
       if (!current) throw new HttpError(404, `no record "${key}" in ${spec.name}`);
       // only the fields being saved must be unchanged; edits to other fields are kept
-      const stale = Object.keys(values).filter(
-        (f) => canonical(own(current, f) ?? null) !== canonical(own(base, f) ?? null),
-      );
-      if (stale.length > 0) {
-        throw new HttpError(409, `changed since it was loaded: ${stale.join(", ")}`, { current, stale });
-      }
+      if (base) assertFresh(current, base, Object.keys(values));
       updateRecord(store, spec, key, values);
     });
     return { ok: true };
@@ -137,10 +132,30 @@ export const rowRoutes: Routes = (router, ctx) => {
     return { key: to };
   });
 
-  router.add("DELETE", "/api/tables/:table/rows/:key", ({ params }) => {
+  router.add("DELETE", "/api/tables/:table/rows/:key", ({ params, body }) => {
     ctx.proposals.assertIdle();
     const spec = tableSpec(ctx, params.table as string);
-    writeTx(ctx.store, () => deleteRecord(ctx.store, spec, params.key as string));
+    const key = params.key as string;
+    const base = baseOf((body as { base?: unknown } | undefined)?.base);
+    const { store } = ctx;
+    writeTx(store, () => {
+      if (base) {
+        const current = readRecord(store, spec, key);
+        if (!current) throw new HttpError(404, `no record "${key}" in ${spec.name}`);
+        // the fields the page read must be unchanged; it may have read only some of them
+        assertFresh(current, base, Object.keys(base));
+      }
+      deleteRecord(store, spec, key);
+    });
     return { ok: true };
   });
 };
+
+// leaving base out skips the check
+const baseOf = (value: unknown) => (value === undefined ? null : objectBody(value, "base"));
+
+function assertFresh(current: Record<string, unknown>, base: Record<string, unknown>, fields: string[]): void {
+  const stale = fields.filter((f) => canonical(own(current, f) ?? null) !== canonical(own(base, f) ?? null));
+  if (stale.length > 0)
+    throw new HttpError(409, `changed since it was loaded: ${stale.join(", ")}`, { current, stale });
+}

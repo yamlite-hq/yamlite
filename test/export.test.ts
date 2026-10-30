@@ -422,7 +422,7 @@ test("pages are written next to the data, and pages that cannot be exported are 
       access: { projects: "read", projects__milestones: "read" },
       sql: false,
       network: [],
-      files: [],
+      files: {},
       ai: null,
     },
   ]);
@@ -477,8 +477,8 @@ function pageFilesRoot(extra: Record<string, string> = {}) {
   return setup({
     "yamlite.yaml":
       files["yamlite.yaml"] +
-      "pages:\n  board:\n    path: .pages/board.html\n    access: { projects: read }\n    files: [.evidence/, docs/readme.txt]\n" +
-      "  people-page:\n    path: .pages/people.html\n    access: { people: read }\n    files: [.people-only/]\n",
+      "pages:\n  board:\n    path: .pages/board.html\n    access: { projects: read }\n    files: { .evidence/: read, docs/readme.txt: read }\n" +
+      "  people-page:\n    path: .pages/people.html\n    access: { people: read }\n    files: { .people-only/: read }\n",
     ".pages/board.html": "<p>board</p>",
     ".pages/people.html": "<p>people</p>",
     ".evidence/a.png": PNG,
@@ -545,7 +545,7 @@ test("a table named files keeps its warnings next to skipped files", async () =>
   const root = setup({
     "yamlite.yaml":
       "tables:\n  files:\n    path: files.yaml\n    key: id\n" +
-      "pages:\n  board:\n    path: .pages/board.html\n    access: { files: read }\n    files: [.evidence/]\n",
+      "pages:\n  board:\n    path: .pages/board.html\n    access: { files: read }\n    files: { .evidence/: read }\n",
     "files.yaml": "- id: a\n  n: 1\n- id: a\n  n: 2\n",
     ".pages/board.html": "<p>board</p>",
     ".evidence/big.bin": "",

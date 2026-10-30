@@ -90,6 +90,7 @@ export function PageView({ name, app = false }: { name: string; app?: boolean })
     window.addEventListener("message", host.handle);
     const off = store.listen((e) => {
       if (e.type === "sync" && (e.changes.length > 0 || e.schema.length > 0)) host.notify([e.table]);
+      else if (e.type === "files") host.filesChanged(e.paths);
       else if (e.type === "hello" || e.type === "reload") {
         host.notify((current.current.meta?.tables ?? []).map((t) => t.name));
       }

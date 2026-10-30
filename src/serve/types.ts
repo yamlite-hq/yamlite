@@ -15,7 +15,8 @@ export type ServeEvent =
   | ({ type: "conflict"; at: string } & ConflictInfo)
   | { type: "error"; at: string; table?: string; message: string }
   | { type: "reload"; at: string; tables: string[] }
-  | { type: "page"; at: string; pages: string[] };
+  | { type: "page"; at: string; pages: string[] }
+  | { type: "files"; at: string; paths: string[] };
 
 export interface ConflictEntry {
   id: string;

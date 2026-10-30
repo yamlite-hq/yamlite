@@ -1,7 +1,11 @@
+import { sha256 as nobleSha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
 import {
   canRead,
   canWrite,
   fileGranted,
+  fileWritable,
+  MAX_PAGE_FILE_BYTES,
   normalizeFilePath,
   notInAccess,
   writesAnything,
@@ -15,7 +19,17 @@ export const READ_ONLY = "this page is read-only here";
 export interface HostDeps {
   api: Pick<
     Api,
-    "rows" | "record" | "create" | "update" | "remove" | "pageSql" | "pageAi" | "pageAiStream" | "pageFile"
+    | "rows"
+    | "record"
+    | "create"
+    | "update"
+    | "remove"
+    | "pageSql"
+    | "pageAi"
+    | "pageAiStream"
+    | "pageFile"
+    | "pageWriteFile"
+    | "pageDeleteFile"
   >;
   readOnly: boolean;
   // the provider that answers a page's AI calls, or null when the host holds no key
@@ -53,6 +67,39 @@ function record(value: unknown, what: string): Row {
   if (value === undefined) return {};
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw fail(400, `${what} must be an object`);
   return value as Row;
+}
+
+function blob(value: unknown, what: string): Blob {
+  if (!(value instanceof Blob)) throw fail(400, `${what} must be a Blob`);
+  return value;
+}
+
+// undefined skips the conflict check; null says the page expects no file there. A Blob is what files.read gave,
+// a digest what files.write returned
+async function fileBase(value: unknown): Promise<string | null | undefined> {
+  const base = record(value, "options").base;
+  if (base === undefined || base === null) return base;
+  if (typeof base === "string" && /^[0-9a-f]{64}$/.test(base)) return base;
+  if (base instanceof Blob) return sha256(base);
+  throw fail(400, "base must be a Blob from files.read, a sha256 from files.write, or null");
+}
+
+function recordBase(value: unknown): Row | undefined {
+  const base = record(value, "options").base;
+  return base === undefined ? undefined : record(base, "base");
+}
+
+// crypto.subtle exists only in secure contexts, and the UI may be opened over plain http from another device
+async function sha256(data: Blob): Promise<string> {
+  return bytesToHex(nobleSha256(new Uint8Array(await data.arrayBuffer())));
+}
+
+async function base64(data: Blob): Promise<string> {
+  const bytes = new Uint8Array(await data.arrayBuffer());
+  let out = "";
+  // String.fromCharCode takes its arguments on the stack; a whole image would overflow it
+  for (let i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(out);
 }
 
 function toWireError(e: unknown) {
@@ -121,7 +168,13 @@ export class PageHost {
     const touched = new Set(tables);
     for (const v of this.meta().views) if (touched.has(v.table)) touched.add(v.name);
     const visible = [...touched].filter((name) => canRead(this.page(), name));
-    if (visible.length > 0) this.post({ yamlite: 1, event: "change", data: { tables: visible } });
+    if (visible.length > 0) this.post({ yamlite: 1, event: "change", data: { tables: visible, files: [] } });
+  }
+
+  filesChanged(paths: string[]): void {
+    const page = this.page();
+    const visible = paths.filter((path) => fileGranted(page.files, path));
+    if (visible.length > 0) this.post({ yamlite: 1, event: "change", data: { tables: [], files: visible } });
   }
 
   theme(theme: "light" | "dark"): void {
@@ -158,6 +211,15 @@ export class PageHost {
     if (!canWrite(this.page(), table)) throw fail(403, `${table} is read-only for this page`);
     if (this.deps.readOnly) throw fail(403, READ_ONLY);
     return table;
+  }
+
+  private writablePath(value: unknown): string {
+    const asked = text(value, "path");
+    const path = normalizeFilePath(asked);
+    if (path === null || path.endsWith("/") || !fileWritable(this.page().files, path))
+      throw fail(403, `${asked} is not in the files this page may write`);
+    if (this.deps.readOnly) throw fail(403, READ_ONLY);
+    return path;
   }
 
   private aiInput(args: unknown[]): PageAiInput {
@@ -225,20 +287,32 @@ export class PageHost {
       }
       case "update": {
         const table = this.writable(args[0]);
-        return api.update(table, text(args[1], "key"), record(args[2], "values"), record(args[3], "base"));
+        return api.update(table, text(args[1], "key"), record(args[2], "values"), recordBase(args[3]));
       }
       case "remove": {
         const table = this.writable(args[0]);
-        return api.remove(table, text(args[1], "key"));
+        return api.remove(table, text(args[1], "key"), recordBase(args[2]));
       }
       case "sql":
         if (!page.sql) throw fail(403, `page ${page.name} may not run SQL`);
         return api.pageSql(page.name, text(args[0], "sql"));
-      case "file": {
+      case "readFile": {
         const asked = text(args[0], "path");
         const path = normalizeFilePath(asked);
         if (path === null || !fileGranted(page.files, path)) throw fail(403, `${asked} is not in this page's files`);
         return api.pageFile(page.name, path);
+      }
+      case "writeFile": {
+        const path = this.writablePath(args[0]);
+        const data = blob(args[1], "data");
+        if (data.size > MAX_PAGE_FILE_BYTES) throw fail(413, `${path} is larger than 10 MB`);
+        const base = await fileBase(args[2]);
+        return api.pageWriteFile(page.name, path, await base64(data), base);
+      }
+      case "deleteFile": {
+        const path = this.writablePath(args[0]);
+        await api.pageDeleteFile(page.name, path, await fileBase(args[1]));
+        return null;
       }
       case "ai":
         return api.pageAi(page.name, this.aiInput(args), this.generating.signal);

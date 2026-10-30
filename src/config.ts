@@ -32,6 +32,7 @@ import {
   normalizeFilePath,
   PAGE_AI_DEFAULT_TOKENS,
   PAGE_AI_MAX_TOKENS,
+  writableType,
 } from "./pages/access.ts";
 
 export interface TableInput {
@@ -713,17 +714,22 @@ function toOrigin(where: string, raw: unknown): string {
 }
 
 // entries stay as written: a trailing / grants a folder, anything else one file
-function toFiles(where: string, raw: unknown): string[] {
-  if (raw === undefined || raw === null) return [];
-  if (!Array.isArray(raw)) throw new Error(`${where}files must be a list of root-relative files and folders`);
-  return raw.map((entry) => {
+function toFiles(where: string, raw: unknown): Record<string, PageAccess> {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== "object" || Array.isArray(raw))
+    throw new Error(`${where}files must map root-relative files and folders to read or write`);
+  const out: Record<string, PageAccess> = {};
+  for (const [entry, level] of Object.entries(raw)) {
     const invalid = (why: string) => new Error(`${where}files entry ${JSON.stringify(entry)} ${why}`);
-    if (typeof entry !== "string" || normalizeFilePath(entry) !== entry) {
+    if (normalizeFilePath(entry) !== entry)
       throw invalid("must be a root-relative path without .., . or empty segments");
-    }
     if (deniedFile(entry, DENIED_FILES)) throw invalid("is YAMLite's own and cannot be granted");
-    return entry;
-  });
+    if (level !== "read" && level !== "write") throw invalid("must be read or write");
+    if (level === "write" && !entry.endsWith("/") && !writableType(entry))
+      throw invalid("cannot be write: a page may write only PNG, JPEG, GIF, WebP or PDF files");
+    out[entry] = level;
+  }
+  return out;
 }
 
 function toPageAi(where: string, raw: unknown): PageSpec["ai"] {

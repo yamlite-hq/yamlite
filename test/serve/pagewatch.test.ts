@@ -11,7 +11,7 @@ test("a save right after update resolves is never missed", async () => {
     const seen: string[][] = [];
     const watch = new PageWatch((pages) => seen.push(pages), 20);
     await watch.update([
-      { name: "board", path: file, title: "Board", access: {}, sql: false, network: [], files: [], ai: null },
+      { name: "board", path: file, title: "Board", access: {}, sql: false, network: [], files: {}, ai: null },
     ]);
     write(file, "<p>new</p>");
     await waitFor(() => seen.some((p) => p.includes("board")), 2000);

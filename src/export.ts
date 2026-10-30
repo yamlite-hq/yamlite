@@ -29,6 +29,7 @@ import { deniedFile } from "./pages/access.ts";
 import { grantedFile, readPageHtml } from "./serve/routes/pages.ts";
 import { HttpError } from "./serve/errors.ts";
 import { recordFile } from "./serve/routes/rows.ts";
+import type { PageSpec } from "./types.ts";
 
 export interface Snapshot {
   version: 1;
@@ -129,11 +130,11 @@ function grantedCandidates(root: string, entries: string[]): string[] {
 function copyPageFiles(
   root: string,
   dir: string,
-  grants: string[],
+  grants: PageSpec["files"],
   denied: string[],
   skipped: Record<string, string>,
 ): void {
-  for (const path of new Set(grantedCandidates(root, grants))) {
+  for (const path of new Set(grantedCandidates(root, Object.keys(grants)))) {
     if (deniedFile(path, denied)) continue;
     let real: string;
     try {
@@ -240,7 +241,7 @@ export async function writeSnapshotData(opts: {
       copyPageFiles(
         root,
         opts.dir,
-        y.pages.filter((p) => kept.has(p.name)).flatMap((p) => p.files),
+        Object.assign({}, ...y.pages.filter((p) => kept.has(p.name)).map((p) => p.files)),
         ctx.deniedFiles,
         skippedFiles,
       );
