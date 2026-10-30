@@ -16,6 +16,7 @@ const notInBrowser = [
   "test/git/**",
   "test/githistory.test.ts",
   "test/cli.test.ts",
+  "test/docs.test.ts",
   "test/export.test.ts",
   "test/guide.test.ts",
   "test/which.test.ts",

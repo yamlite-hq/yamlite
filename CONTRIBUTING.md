@@ -32,7 +32,7 @@ YAMLite never loses data silently. A change that could overwrite a file, delete 
 - Add tests for behavior changes. `vitest` covers the engine, sources, schema, CLI output and watch mode.
 - Run `pnpm check` before pushing; CI runs the same thing on Node 24.16 and 26, on Linux and macOS.
 - Keep commits conventional (`fix(engine): …`, `feat: …`), matching the existing history.
-- Update the README when a command, option or `yamlite.yaml` field changes — it is the reference for both.
+- Update the docs in `docs/` (and the README, if it is affected) when a command, option or `yamlite.yaml` field changes. The docs are the reference for both the CLI and the web UI.
 
 ## Reporting bugs
 
