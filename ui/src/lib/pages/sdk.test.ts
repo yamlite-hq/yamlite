@@ -63,18 +63,32 @@ test("a call posts a request and resolves with the parent's answer", async () =>
   await expect(p).resolves.toEqual({ rows: [], total: 0 });
 });
 
-test("file asks the parent for a path and resolves with its Blob", async () => {
+test("files.read asks the parent for a path and resolves with its Blob", async () => {
   const f = fake();
-  const p = f.yamlite.file("a.png");
-  expect(f.sent.at(-1)).toEqual({ yamlite: 1, id: 2, method: "file", args: ["a.png"] });
+  const p = f.yamlite.files.read("a.png");
+  expect(f.sent.at(-1)).toEqual({ yamlite: 1, id: 2, method: "readFile", args: ["a.png"] });
   const blob = new Blob([new Uint8Array([1, 2])], { type: "image/png" });
   f.reply({ yamlite: 1, id: 2, ok: true, value: blob });
   await expect(p).resolves.toBe(blob);
 });
 
+// jsdom's Blob does not survive Node's structuredClone; a browser posts it whole
+test("files.write and files.delete pass the path, the Blob and the base on", async () => {
+  const f = fake();
+  void f.yamlite.files.write("shots/a.png", new Blob(["new"]), { base: null });
+  expect(f.sent.at(-1)).toMatchObject({
+    yamlite: 1,
+    id: 2,
+    method: "writeFile",
+    args: ["shots/a.png", {}, { base: null }],
+  });
+  void f.yamlite.files.delete("shots/a.png");
+  expect(f.sent.at(-1)).toEqual({ yamlite: 1, id: 3, method: "deleteFile", args: ["shots/a.png", {}] });
+});
+
 test("an error answer rejects with a YamliteError carrying status and extra", async () => {
   const f = fake();
-  const p = f.yamlite.update("tasks", "a", { status: "done" }, { status: "todo" });
+  const p = f.yamlite.update("tasks", "a", { status: "done" }, { base: { status: "todo" } });
   f.reply({ yamlite: 1, id: 2, ok: false, error: { status: 409, message: "changed", extra: { stale: ["status"] } } });
   const err = await p.catch((e: unknown) => e);
   expect(err).toBeInstanceOf(f.yamlite.YamliteError);

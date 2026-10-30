@@ -193,11 +193,21 @@ export function pageSdk(
     rows: (table: string, opts: Record<string, unknown> = {}) => call("rows", table, opts),
     get: (table: string, key: string) => call("get", table, key),
     create: (table: string, key: string, values: Record<string, unknown>) => call("create", table, key, values),
-    update: (table: string, key: string, values: Record<string, unknown>, base: Record<string, unknown>) =>
-      call("update", table, key, values, base),
-    remove: (table: string, key: string) => call("remove", table, key),
+    update: (
+      table: string,
+      key: string,
+      values: Record<string, unknown>,
+      opts: { base?: Record<string, unknown> } = {},
+    ) => call("update", table, key, values, opts),
+    remove: (table: string, key: string, opts: { base?: Record<string, unknown> } = {}) =>
+      call("remove", table, key, opts),
     sql: (sql: string) => call("sql", sql),
-    file: (path: string) => call("file", path),
+    files: Object.freeze({
+      read: (path: string) => call("readFile", path),
+      write: (path: string, data: Blob, opts: { base?: Blob | string | null } = {}) =>
+        call("writeFile", path, data, opts),
+      delete: (path: string, opts: { base?: Blob | string | null } = {}) => call("deleteFile", path, opts),
+    }),
     open: (table: string, key: string) => call("open", table, key),
     ai: Object.freeze({
       generate: (input: Record<string, unknown>) => call("ai", input),

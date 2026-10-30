@@ -190,6 +190,8 @@ export function createStaticApi(opts: {
     update: refuse,
     rename: refuse,
     remove: refuse,
+    pageWriteFile: refuse,
+    pageDeleteFile: refuse,
     createTable: refuse,
     setGroup: refuse,
     previewRules: refuse,

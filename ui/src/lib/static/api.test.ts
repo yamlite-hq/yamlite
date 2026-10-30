@@ -117,7 +117,7 @@ const snapshot: Snapshot = {
         access: { tasks: "read" },
         sql: true,
         network: [],
-        files: [".evidence/", "yamlite.yaml"],
+        files: { ".evidence/": "read", "yamlite.yaml": "read" },
         ai: null,
       },
       {
@@ -127,7 +127,7 @@ const snapshot: Snapshot = {
         access: { tasks: "read" },
         sql: false,
         network: [],
-        files: [],
+        files: {},
         ai: null,
       },
     ],

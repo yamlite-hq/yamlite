@@ -21,7 +21,7 @@ const INITIAL: EventState = {
 };
 const CLOSED = 2; // EventSource.CLOSED
 const KEEP = 200;
-const TYPES = ["sync", "conflict", "error", "reload", "page"] as const;
+const TYPES = ["sync", "conflict", "error", "reload", "page", "files"] as const;
 
 // EventSource also fires a data-less `error` Event on connection trouble, which shares the name of the server's `error` event
 function parseFrame<T>(m: Event): T | null {
@@ -92,7 +92,7 @@ export class EventStore {
   }
 
   apply(e: ServeEvent): void {
-    if (e.type === "page") {
+    if (e.type === "page" || e.type === "files") {
       this.emit(e);
       return;
     }

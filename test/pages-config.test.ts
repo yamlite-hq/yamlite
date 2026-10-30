@@ -30,7 +30,7 @@ test("a declared page resolves its path, title and permissions", () => {
       access: { tasks: "write", projects__milestones: "read" },
       sql: true,
       network: ["https://cdn.jsdelivr.net"],
-      files: [],
+      files: {},
       ai: null,
     },
   ]);
@@ -42,18 +42,16 @@ test("a page allows nothing unless it says so, and is titled by its name", () =>
     access: {},
     sql: false,
     network: [],
-    files: [],
+    files: {},
     ai: null,
   });
 });
 
-test("files entries stay as written and default to none", () => {
-  expect(pagesOf("pages:\n  board:\n    path: b.html\n    files: [.evidence/, docs/a.png]\n")[0]?.files).toEqual([
-    ".evidence/",
-    "docs/a.png",
-  ]);
-  expect(pagesOf("pages:\n  board:\n    path: b.html\n")[0]?.files).toEqual([]);
-  expect(pagesOf("pages:\n  board:\n    path: b.html\n    files: [data/]\n")[0]?.files).toEqual(["data/"]);
+test("files entries stay as written with their level and default to none", () => {
+  expect(
+    pagesOf("pages:\n  board:\n    path: b.html\n    files: { .evidence/: write, docs/a.png: read }\n")[0]?.files,
+  ).toEqual({ ".evidence/": "write", "docs/a.png": "read" });
+  expect(pagesOf("pages:\n  board:\n    path: b.html\n")[0]?.files).toEqual({});
 });
 
 test.each([
@@ -68,13 +66,14 @@ test.each([
   "yamlite.yml",
   "Yamlite.yaml",
   ".YAMLITE/x",
-  "3",
 ])("rejects the files entry %s", (entry) => {
-  expect(() => pagesOf(`pages:\n  board:\n    path: b.html\n    files: [${entry}]\n`)).toThrow('page "board": files');
+  expect(() => pagesOf(`pages:\n  board:\n    path: b.html\n    files: { ${entry}: read }\n`)).toThrow(
+    'page "board": files',
+  );
 });
 
-test("rejects files that is not a list", () => {
-  expect(() => pagesOf("pages:\n  board:\n    path: b.html\n    files: x\n")).toThrow('page "board": files');
+test.each(["x", "[a/]", "{ a/: admin }", "{ a/: true }"])("rejects files: %s", (files) => {
+  expect(() => pagesOf(`pages:\n  board:\n    path: b.html\n    files: ${files}\n`)).toThrow('page "board": files');
 });
 
 test("no pages key means no pages", () => {
@@ -101,6 +100,10 @@ test.each([
     'page "b": access must be a map of tables to read or write',
   ],
   ["pages:\n  b:\n    path: b.html\n    access: { tasks: admin }\n", 'page "b": access.tasks must be read or write'],
+  [
+    "pages:\n  b:\n    path: b.html\n    files: { notes.txt: write }\n",
+    'page "b": files entry "notes.txt" cannot be write',
+  ],
   [
     "pages:\n  b:\n    path: b.html\n    access: { people: read }\n",
     'page "b": unknown table or view "people" in access',

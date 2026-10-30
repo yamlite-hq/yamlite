@@ -178,8 +178,10 @@ export function rowsQuery(p: RowsParams): URLSearchParams {
 }
 
 // bytes, not JSON: only an error is read as an answer
+const pageFilePath = (name: string, path: string) => `/api/pages/${enc(name)}/file?path=${encodeURIComponent(path)}`;
+
 async function fetchPageFile(name: string, path: string): Promise<Blob> {
-  const res = await transport().fetch(`/api/pages/${enc(name)}/file?path=${encodeURIComponent(path)}`, {
+  const res = await transport().fetch(pageFilePath(name, path), {
     credentials: "same-origin",
   });
   if (!res.ok) await answer(res);
@@ -194,11 +196,12 @@ export const httpApi = {
   record: (table: string, key: string) => request<RecordDetail>("GET", rowPath(table, key)),
   create: (table: string, key: string, values: Row) =>
     request<{ key: string }>("POST", rowsPath(table), { key, values }),
-  update: (table: string, key: string, values: Row, base: Row) =>
+  // base is the record as last read; leaving it out skips the check
+  update: (table: string, key: string, values: Row, base?: Row) =>
     request<{ ok: true }>("PATCH", rowPath(table, key), { values, base }),
   rename: (table: string, key: string, to: string) =>
     request<{ key: string }>("POST", `${rowPath(table, key)}/rename`, { to }),
-  remove: (table: string, key: string) => request<{ ok: true }>("DELETE", rowPath(table, key)),
+  remove: (table: string, key: string, base?: Row) => request<{ ok: true }>("DELETE", rowPath(table, key), { base }),
   history: (table: string, key: string, cursor?: string) =>
     request<HistoryPage>(
       "GET",
@@ -222,6 +225,11 @@ export const httpApi = {
     request<RulesPreview & { base: string }>("PUT", "/api/rules", { target, rules, base, ...edit }),
   pageHtml: (name: string) => request<{ html: string }>("GET", `/api/pages/${enc(name)}/html`).then((r) => r.html),
   pageFile: (name: string, path: string) => fetchPageFile(name, path),
+  // data is base64; base is the SHA-256 of the content the page last read, null when it expects no file
+  pageWriteFile: (name: string, path: string, data: string, base?: string | null) =>
+    request<{ sha256: string }>("PUT", pageFilePath(name, path), { data, base }),
+  pageDeleteFile: (name: string, path: string, base?: string | null) =>
+    request<{ ok: true }>("DELETE", pageFilePath(name, path), { base }),
   pageSql: (name: string, sql: string) => request<SqlResult>("POST", "/api/sql", { sql, page: name }),
   pageAi: (name: string, body: PageAiInput, signal?: AbortSignal) =>
     postPageAi(`/api/pages/${enc(name)}/ai`, body, signal).then((res) =>
@@ -258,7 +266,7 @@ export const api: Api = {
   create: (table, key, values) => backend.create(table, key, values),
   update: (table, key, values, base) => backend.update(table, key, values, base),
   rename: (table, key, to) => backend.rename(table, key, to),
-  remove: (table, key) => backend.remove(table, key),
+  remove: (table, key, base) => backend.remove(table, key, base),
   history: (table, key, cursor) => backend.history(table, key, cursor),
   historyDiff: (table, key, rev) => backend.historyDiff(table, key, rev),
   createTable: (body) => backend.createTable(body),
@@ -268,6 +276,8 @@ export const api: Api = {
   sql: (sql) => backend.sql(sql),
   pageHtml: (name) => backend.pageHtml(name),
   pageFile: (name, path) => backend.pageFile(name, path),
+  pageWriteFile: (name, path, data, base) => backend.pageWriteFile(name, path, data, base),
+  pageDeleteFile: (name, path, base) => backend.pageDeleteFile(name, path, base),
   pageSql: (name, sql) => backend.pageSql(name, sql),
   pageAi: (name, body, signal) => backend.pageAi(name, body, signal),
   pageAiStream: (name, body, signal) => backend.pageAiStream(name, body, signal),

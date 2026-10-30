@@ -14,6 +14,7 @@ import { EventHub } from "./events.ts";
 import { Router } from "./http.ts";
 import { PageSql } from "./pagesql.ts";
 import { PageWatch } from "./pagewatch.ts";
+import { FileWatch } from "./filewatch.ts";
 import { ROUTES } from "./routes/index.ts";
 import { createTable } from "./routes/tables.ts";
 import { assertSynced } from "./write.ts";
@@ -21,7 +22,7 @@ import { assertSynced } from "./write.ts";
 // Ask AI as a host configures it; the workspace supplies the tools and what they report
 export type AiOptions = Omit<HostOptions, "tools" | "feedback" | "notes">;
 
-// bytes, or why there are none; undefined leaves the file to the working tree
+// bytes, or why there are none; undefined means the host has no source of its own either
 export type PageFileResult = Uint8Array<ArrayBuffer> | "missing" | "too-large" | undefined;
 
 export interface WorkspaceOptions {
@@ -34,7 +35,8 @@ export interface WorkspaceOptions {
   git?: GitDriver | null;
   // skips gh detection; null means no gh
   gh?: string | null;
-  // a host's own source for page files (one that fetches them lazily); path is root-relative, granted and not denied
+  // a host's own source for page files missing from the working tree (one that fetches them lazily); path is
+  // root-relative, granted and not denied
   pageFiles?: (path: string, signal: AbortSignal) => Promise<PageFileResult>;
 }
 
@@ -54,22 +56,29 @@ export async function createWorkspace(o: WorkspaceOptions): Promise<Workspace> {
   let dry: Store | undefined;
   let pageSql: PageSql | undefined;
   let pageWatch: PageWatch | undefined;
+  let fileWatch: FileWatch | undefined;
   try {
     const hub = new EventHub();
+    const root = resolve(o.root);
+    const denied = deniedFiles(root, config.stateDir, config.db);
     pageWatch = new PageWatch((pages) => hub.pagesChanged(pages), o.watch?.debounceMs);
+    fileWatch = new FileWatch(root, denied, (paths) => hub.filesChanged(paths), o.watch?.debounceMs);
     const pages = pageWatch;
+    const files = fileWatch;
     const watcher = y.watch(
       {
         ...hub.handlers,
         onReload: (tables) => {
           hub.handlers.onReload?.(tables);
           void pages.update(y.pages);
+          void files.update(y.pages);
         },
       },
       o.watch,
     );
     await watcher.ready;
     await pages.update(y.pages);
+    await files.update(y.pages);
     store = new Store(config.db);
     pageSql = new PageSql(config.db);
     dry = new Store(config.db);
@@ -106,7 +115,6 @@ export async function createWorkspace(o: WorkspaceOptions): Promise<Workspace> {
         if (p.git && (p.status === "applied" || p.status === "failed")) ctx.agent?.notify(p.conversationId, GIT_DONE);
       },
     );
-    const root = resolve(o.root);
     const ctx: ApiContext = {
       y,
       store,
@@ -121,7 +129,7 @@ export async function createWorkspace(o: WorkspaceOptions): Promise<Workspace> {
       git,
       reloadConfig: () => watcher.reloadConfig(),
       pageFiles: o.pageFiles ?? null,
-      deniedFiles: deniedFiles(root, config.stateDir, config.db),
+      deniedFiles: denied,
     };
     const router = new Router();
     for (const routes of ROUTES) routes(router, ctx);
@@ -146,6 +154,7 @@ export async function createWorkspace(o: WorkspaceOptions): Promise<Workspace> {
           try {
             await ctx.agent?.close();
             await pages.close();
+            await files.close();
             hub.close();
           } finally {
             try {
@@ -168,6 +177,7 @@ export async function createWorkspace(o: WorkspaceOptions): Promise<Workspace> {
     };
   } catch (e) {
     await pageWatch?.close();
+    await fileWatch?.close();
     pageSql?.close();
     dry?.close();
     store?.close();

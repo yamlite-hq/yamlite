@@ -49,6 +49,12 @@ export class EventHub {
     for (const res of this.clients.keys()) this.send(res, event.type, event);
   }
 
+  // root-relative paths of files some page declares; like pages, nothing to keep
+  filesChanged(paths: string[]): void {
+    const event: ServeEvent = { type: "files", at: now(), paths };
+    for (const res of this.clients.keys()) this.send(res, event.type, event);
+  }
+
   stream(signal: AbortSignal): ReadableStream<Uint8Array> {
     let ctrl!: ReadableStreamDefaultController<Uint8Array>;
     const drop = () => {

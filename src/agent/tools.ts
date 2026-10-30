@@ -104,7 +104,7 @@ export function agentTools(ctx: ApiContext, conversationId: string): AgentTool[]
           access: Object.fromEntries(names.map((n) => [n, "read" as const])),
           sql: true,
           network: [],
-          files: [],
+          files: {},
           ai: null,
         };
         const r = ctx.pageSql.run(rules, views(), sql, QUERY_ROWS);

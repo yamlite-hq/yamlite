@@ -68,8 +68,8 @@
           caption.textContent = row[TITLE] ?? row[IMAGE] ?? "";
           figure.append(img, caption);
           if (row[IMAGE]) {
-            yamlite
-              .file(row[IMAGE])
+            yamlite.files
+              .read(row[IMAGE])
               .then((blob) => {
                 const url = URL.createObjectURL(blob);
                 urls.push(url);

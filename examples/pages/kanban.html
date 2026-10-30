@@ -124,7 +124,7 @@
 
       async function move(key, from, to) {
         try {
-          await yamlite.update(TABLE, key, { [GROUP]: to }, { [GROUP]: from });
+          await yamlite.update(TABLE, key, { [GROUP]: to }, { base: { [GROUP]: from } });
           showError("");
         } catch (e) {
           showError(e.status === 409 ? "This card changed elsewhere; the board was reloaded." : e.message);

@@ -28,18 +28,24 @@ interface Route {
   method: string;
   parts: string[];
   handler: Handler;
+  maxBody: number;
 }
+
+const MAX_BODY = 1_048_576;
 
 export class Router {
   private readonly routes: Route[] = [];
 
-  add(method: string, pattern: string, handler: Handler): this {
-    this.routes.push({ method, parts: pattern.split("/").filter(Boolean), handler });
+  add(method: string, pattern: string, handler: Handler, opts: { maxBody?: number } = {}): this {
+    this.routes.push({ method, parts: pattern.split("/").filter(Boolean), handler, maxBody: opts.maxBody ?? MAX_BODY });
     return this;
   }
 
   // splits before decoding, so an encoded "/" stays inside its segment
-  match(method: string, pathname: string): { handler: Handler; params: Record<string, string> } | "method" | null {
+  match(
+    method: string,
+    pathname: string,
+  ): { handler: Handler; params: Record<string, string>; maxBody: number } | "method" | null {
     const segments = pathname.split("/").filter(Boolean);
     let wrongMethod = false;
     for (const route of this.routes) {
@@ -60,7 +66,7 @@ export class Router {
         wrongMethod = true;
         continue;
       }
-      return { handler: route.handler, params };
+      return { handler: route.handler, params, maxBody: route.maxBody };
     }
     return wrongMethod ? "method" : null;
   }
@@ -76,7 +82,7 @@ export class Router {
         // anything but JSON would be a "simple" cross-site request that skips the CORS preflight
         if (!/^application\/json\s*(;|$)/i.test(request.headers.get("content-type") ?? ""))
           throw new HttpError(415, "content-type must be application/json");
-        body = await readBody(request);
+        body = await readBody(request, match.maxBody);
       }
       const out = await match.handler({ params: match.params, query: url.searchParams, body, signal: request.signal });
       if (out instanceof Response) return out;
@@ -104,11 +110,9 @@ export function sendJson(res: ServerResponse, status: number, body: unknown): vo
   res.end(JSON.stringify(body, jsonReplacer));
 }
 
-const MAX_BODY = 1_048_576;
-
-async function readBody(request: Request): Promise<unknown> {
+async function readBody(request: Request, max: number): Promise<unknown> {
   const tooLarge = () => new HttpError(413, "request body is too large");
-  if (Number(request.headers.get("content-length")) > MAX_BODY) throw tooLarge();
+  if (Number(request.headers.get("content-length")) > max) throw tooLarge();
   const chunks: Uint8Array[] = [];
   let size = 0;
   if (request.body) {
@@ -117,7 +121,7 @@ async function readBody(request: Request): Promise<unknown> {
       const { value, done } = await reader.read();
       if (done) break;
       size += value.length;
-      if (size > MAX_BODY) {
+      if (size > max) {
         await reader.cancel().catch(() => {});
         throw tooLarge();
       }

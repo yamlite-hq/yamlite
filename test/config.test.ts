@@ -828,7 +828,7 @@ test("parseConfig keeps page paths as written", () => {
       access: { tasks: "read" },
       sql: false,
       network: [],
-      files: [],
+      files: {},
       ai: null,
     },
   ]);
