@@ -1,7 +1,7 @@
 import { type Dirent, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, matchesGlob, normalize, relative, resolve, sep } from "node:path";
-import { isSeq, parse, parseDocument } from "yaml";
+import { isSeq, parse, parseAllDocuments, parseDocument } from "yaml";
 import { instant, isDate, isDatetime } from "./datetime.ts";
 import { claims } from "./source/files.ts";
 import { markdownExt } from "./source/markdown.ts";
@@ -227,7 +227,8 @@ function hasFilesButNoYaml(dir: string): boolean {
 }
 
 // a YAML file at the root that holds something other than a list (a lockfile, a tool's settings) is not data,
-// so the conventions make no table of it; yamlite.yaml can still declare one
+// so the conventions make no table of it; yamlite.yaml can still declare one. A file of several documents, as a
+// recent pnpm lockfile is, is no table either, as a table's file is one document
 function notAList(path: string): boolean {
   let text: string;
   try {
@@ -235,6 +236,8 @@ function notAList(path: string): boolean {
   } catch {
     return false;
   }
+  const docs = parseAllDocuments(text);
+  if (Array.isArray(docs) && docs.length > 1) return true;
   const doc = parseDocument(text);
   return doc.errors.length === 0 && doc.contents !== null && !isSeq(doc.contents);
 }
