@@ -13,6 +13,8 @@ export interface Repo {
   top: string;
   root: string;
   prefix: string;
+  // a file outside the data root the workspace still owns (a table's file); absent: nothing outside it
+  reaches?: (file: string) => boolean;
 }
 
 type GitOptions = { input?: string; timeoutMs?: number; cmd?: string };
@@ -63,9 +65,13 @@ export async function findRepo(root: string): Promise<Repo | null> {
   }
 }
 
-// a path under the work tree top → its data-root path, or null when it is outside the data root
-export const toRoot = (repo: Repo, topPath: string): string | null =>
-  topPath.startsWith(repo.prefix) ? topPath.slice(repo.prefix.length) : null;
+// a path under the work tree top → its data-root path, or null when the workspace does not own it
+export function toRoot(repo: Repo, topPath: string): string | null {
+  if (topPath.startsWith(repo.prefix)) return topPath.slice(repo.prefix.length);
+  if (!repo.reaches) return null;
+  const path = posix.relative(repo.prefix.replace(/\/$/, "") || ".", topPath);
+  return repo.reaches(resolve(repo.root, path)) ? path : null;
+}
 
 export async function currentBranch(repo: Repo): Promise<string | null> {
   try {
@@ -180,10 +186,14 @@ export async function ghReady(env: NodeJS.ProcessEnv = process.env): Promise<boo
   }
 }
 
-// a data-root path → its path under the work tree top, or null when it leaves the data root
+// a data-root path → its path under the work tree top, or null when it leaves the data root and the workspace does
+// not own it, or leaves the work tree
 export function insideRoot(repo: Repo, path: string): string | null {
   const abs = resolve(repo.root, path);
   const rel = relative(repo.root, abs);
-  if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
-  return repo.prefix + rel.split(sep).join(posix.sep);
+  if (rel === "" || isAbsolute(rel)) return null;
+  const inside = rel !== ".." && !rel.startsWith(`..${sep}`);
+  if (!inside && !repo.reaches?.(abs)) return null;
+  const top = posix.normalize(repo.prefix + rel.split(sep).join(posix.sep));
+  return top === ".." || top.startsWith("../") ? null : top;
 }

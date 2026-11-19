@@ -4,6 +4,7 @@ import { ProposalStore } from "../agent/proposals.ts";
 import { agentTools } from "../agent/tools.ts";
 import { configPath, resolveConfig } from "../config.ts";
 import { type WorkspaceDriver, localDriver } from "../git/driver.ts";
+import { ownerOf } from "./gitrecords.ts";
 import { ghReady } from "../git/repo.ts";
 import { open } from "../index.ts";
 import { Store } from "../store.ts";
@@ -85,7 +86,7 @@ export async function createWorkspace(o: WorkspaceOptions): Promise<Workspace> {
     let probed: Promise<string | null> | undefined;
     const gh = () =>
       (probed ??= o.gh !== undefined ? Promise.resolve(o.gh) : ghReady().then((ok) => (ok ? which("gh") : null)));
-    const git = o.git === undefined ? await localDriver(o.root, gh) : o.git;
+    const git = o.git === undefined ? await localDriver(o.root, gh, (file) => ownerOf(y.tables, file) !== null) : o.git;
     const proposals = new ProposalStore(
       {
         store,

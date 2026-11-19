@@ -229,3 +229,26 @@ test("GET /api/git/diff gives each changed record's fields before and after", as
   expect((await t.api("/api/git/diff?path=..%2Fx.yaml")).status).toBe(400);
   expect((await t.api("/api/git/diff?path=yamlite.yaml")).status).toBe(404);
 });
+
+test("GET /api/git/diff names what changed inside a map field by its path, and only that", async () => {
+  const config = "tables:\n  events:\n    columns:\n      title: TEXT\n      cells: JSON\n";
+  const before = "title: E\ncells:\n  a:\n    requirement: REQUIRED\n  b:\n    requirement: OPTIONAL\n";
+  const root = dataRoot();
+  write(join(root, "yamlite.yaml"), config);
+  write(join(root, "events/e.yaml"), before);
+  withRemote(root);
+  t = await startServe({}, undefined, { root, gh: null });
+  write(join(t.root, "events/e.yaml"), before.replace("OPTIONAL", "FIXED\n    value: test"));
+  await waitForAsync(async () => (await gitOf(t!)).changes.length === 1);
+  const r = await t.api(`/api/git/diff?path=${encodeURIComponent("events/e.yaml")}`);
+  expect(r.body.records).toEqual([
+    {
+      key: "e",
+      kind: "modified",
+      fields: [
+        { field: "cells.b.requirement", from: "OPTIONAL", to: "FIXED" },
+        { field: "cells.b.value", from: null, to: "test" },
+      ],
+    },
+  ]);
+});

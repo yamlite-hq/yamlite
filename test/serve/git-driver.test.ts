@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from "vitest";
 import type { GitStatus, ReviewCapability, WorkspaceDriver } from "../../src/git/driver.ts";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { useGitEnv, withRemote } from "../gitrepo.ts";
 import { read, write } from "../helpers.ts";
 import { tasksWorkspace } from "./helpers.ts";
@@ -141,4 +141,38 @@ test("a driver without history answers nogit", async () => {
   expect(h.state).toBe("nogit");
   const diff = await w.router.dispatch(new Request(`http://x/api/tables/tasks/rows/a/history/${"a".repeat(40)}/diff`));
   expect(diff.status).toBe(404);
+});
+
+test("a table's files outside the data folder can be compared and put back; other files out there cannot", async () => {
+  let spec = "";
+  const setup = (root: string) => {
+    spec = `../${basename(root)}-spec`;
+    write(
+      join(root, "yamlite.yaml"),
+      `tables:\n  events:\n    files: "${spec}/events/*.yaml"\n    columns:\n      title: TEXT\n`,
+    );
+    write(join(root, spec, "events/a.yaml"), "title: B\n");
+  };
+  const file = () => `${spec}/events/a.yaml`;
+  const git: WorkspaceDriver = fakeDriver({}, { branch: "main", upstream: null, changes: [] });
+  const { w: ws, root } = await tasksWorkspace({ git }, setup);
+  git.baseContent = async (p) => (p === file() ? "title: A\n" : null);
+  git.baseFile = async (p) => (p === file() ? Buffer.from("title: A\n") : null);
+  git.status = async () => ({ branch: "main", upstream: null, changes: [{ path: file(), status: "modified" }] });
+  const call = (path: string, init?: RequestInit) => ws.router.dispatch(new Request(`http://x${path}`, init));
+  const diff = await call(`/api/git/diff?path=${encodeURIComponent(file())}`);
+  expect(diff.status).toBe(200);
+  expect((await diff.json()).records).toEqual([
+    { key: "a", kind: "modified", fields: [{ field: "title", from: "A", to: "B" }] },
+  ]);
+  expect((await call(`/api/git/diff?path=${encodeURIComponent(`${spec}/other.txt`)}`)).status).toBe(400);
+  const revert = (files: string[]) =>
+    call("/api/git/revert", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ files }),
+    });
+  expect((await revert([`${spec}/other.txt`])).status).toBe(400);
+  expect((await revert([file()])).status).toBe(200);
+  expect(read(join(root, file()))).toBe("title: A\n");
 });
