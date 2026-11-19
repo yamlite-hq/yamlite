@@ -357,6 +357,18 @@ describe("generateConfig", () => {
     expect(config).not.toContain("pnpm-lock");
   });
 
+  test("leaves out a root lockfile that holds several YAML documents", () => {
+    const root = tmpRoot();
+    write(
+      join(root, "pnpm-lock.yaml"),
+      "---\nlockfileVersion: '9.0'\nimporters: {}\n\n---\nlockfileVersion: '9.0'\nimporters: {}\n",
+    );
+    write(join(root, "people.yaml"), "- id: ada\n  name: Ada\n");
+    const config = generateConfig({ root });
+    expect(config).toContain("people:");
+    expect(config).not.toContain("pnpm-lock");
+  });
+
   test("still reports a declared table whose file is not a list", () => {
     const root = tmpRoot();
     write(join(root, "settings.yaml"), "theme: dark\n");
