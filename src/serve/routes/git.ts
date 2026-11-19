@@ -4,6 +4,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync } from "node:fs"
 import { type DraftFile, draftReview } from "../../agent/reviewdraft.ts";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { writeAtomic } from "../../fsutil.ts";
+import { fieldChanges } from "../../githistory.ts";
 import { canonical } from "../../hash.ts";
 import { own, type Rec } from "../../types.ts";
 import { tableSpec } from "../context.ts";
@@ -90,10 +91,7 @@ export const gitRoutes: Routes = (router, ctx) => {
       const changed = new Set((await from.changes().catch(notFound)).map((c) => c.path));
       const files = await Promise.all(
         (paths as string[]).map(async (path) => {
-          const file = resolve(ctx.root, path);
-          const rel = relative(ctx.root, file);
-          if (rel === "" || rel.startsWith("..") || isAbsolute(rel))
-            throw new HttpError(400, `${path} is outside the data folder`);
+          const file = dataFile(ctx, path);
           if (!changed.has(path)) throw new HttpError(400, `${path} is the same as on the default branch`);
           const content = await from.file(path).catch(notFound);
           if (content === null && existsSync(file) && lstatSync(file).isDirectory())
@@ -122,9 +120,7 @@ export const gitRoutes: Routes = (router, ctx) => {
     const git = ctx.git;
     if (!git) throw new HttpError(404, "the data folder is not in a git repository");
     const path = query.get("path") ?? "";
-    const rel = relative(ctx.root, resolve(ctx.root, path));
-    if (rel === "" || rel.startsWith("..") || isAbsolute(rel))
-      throw new HttpError(400, `${path} is outside the data folder`);
+    dataFile(ctx, path);
     const found = await recordChanges(git, ctx.root, ctx.y.tables, path).catch(notFound);
     if (!found?.records) throw new HttpError(404, `${path} holds no records to compare`);
     return {
@@ -132,13 +128,19 @@ export const gitRoutes: Routes = (router, ctx) => {
         const keyField = ctx.y.tables.find((t) => t.name === found.table)?.key ?? "";
         const before = r.before ? withoutKey(r.before, keyField) : {};
         const after = r.after ? withoutKey(r.after, keyField) : {};
-        const fields = [...new Set([...Object.keys(after), ...Object.keys(before)])]
-          .filter((f) => r.kind !== "modified" || r.fields.includes(f))
-          .map((field) => ({
-            field,
-            from: wireValue(own(before, field) ?? null),
-            to: wireValue(own(after, field) ?? null),
-          }));
+        // a changed record names what changed inside a map field by its path; one that came or went shows it whole
+        const fields =
+          r.kind === "modified"
+            ? fieldChanges(before, after).map((c) => ({
+                field: c.path,
+                from: wireValue(c.from),
+                to: wireValue(c.to),
+              }))
+            : [...new Set([...Object.keys(after), ...Object.keys(before)])].map((field) => ({
+                field,
+                from: wireValue(own(before, field) ?? null),
+                to: wireValue(own(after, field) ?? null),
+              }));
         return { key: r.key, kind: r.kind, fields };
       }),
     };
@@ -240,10 +242,7 @@ export const gitRoutes: Routes = (router, ctx) => {
     const changed = new Map(paths.length > 0 ? (await git.status()).changes.map((c) => [c.path, c.status]) : []);
     const files = await Promise.all(
       (paths as string[]).map(async (path) => {
-        const file = resolve(ctx.root, path);
-        const rel = relative(ctx.root, file);
-        if (rel === "" || rel.startsWith("..") || isAbsolute(rel))
-          throw new HttpError(400, `${path} is outside the data folder`);
+        const file = dataFile(ctx, path);
         const status = changed.get(path);
         if (status === undefined) throw new HttpError(400, `${path} has no changes`);
         const content = await git.baseFile(path).catch(notFound);
@@ -323,6 +322,15 @@ function shownFile(file: string): string | null {
   const s = lstatSync(file);
   if (!s.isFile()) return s.isSymbolicLink() ? "(a symbolic link)" : null;
   return s.size > DRAFT_FILE_BYTES ? OMITTED : shownText(readFileSync(file, "utf8"));
+}
+
+// the file a path from the UI names: inside the data folder, or outside it only when a table takes it in
+function dataFile(ctx: Parameters<Routes>[1], path: string): string {
+  const file = resolve(ctx.root, path);
+  const rel = relative(ctx.root, file);
+  const inside = rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+  if (!inside && ownerOf(ctx.y.tables, file) === null) throw new HttpError(400, `${path} is outside the data folder`);
+  return file;
 }
 
 // a local serve started outside a repository answers as if it had no git

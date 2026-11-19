@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "vitest";
-import { commit, git, useGitEnv } from "../gitrepo.ts";
+import { commit, git, useGitEnv, withRemote } from "../gitrepo.ts";
 import { dataRoot, read, waitFor, write } from "../helpers.ts";
 import { type Served, startServe } from "./helpers.ts";
 import { edit, gitOf, repoServe } from "./repo.ts";
@@ -170,4 +170,38 @@ test("while a review runs, form writes get 409", async () => {
   release();
   await held;
   expect((await edit(t, "b", "B", "B2")).status).toBe(200);
+});
+
+test("a table's files outside the data folder are listed, compared and sent for review; other files out there are not", async () => {
+  const top = dataRoot();
+  const root = join(top, "data");
+  write(
+    join(root, "yamlite.yaml"),
+    'tables:\n  events:\n    files: "../spec/events/*.yaml"\n    columns:\n      title: TEXT\n',
+  );
+  write(join(top, "spec/events/a.yaml"), "title: A\n");
+  write(join(top, "src/app.ts"), "x\n");
+  const bare = withRemote(top);
+  t = await startServe({}, undefined, { root, gh: null });
+  git(top, "remote", "set-url", "origin", "https://github.com/acme/notes.git");
+  git(top, "remote", "set-url", "--push", "origin", bare);
+  write(join(top, "src/app.ts"), "y\n");
+  await t.api("/api/tables/events/rows/a", { method: "PATCH", body: { values: { title: "B" }, base: { title: "A" } } });
+  await waitFor(() => read(join(top, "spec/events/a.yaml")) === "title: B\n");
+  expect((await gitOf(t)).changes).toEqual([
+    {
+      path: "../spec/events/a.yaml",
+      status: "modified",
+      table: "events",
+      records: [{ key: "a", kind: "modified", fields: ["title"] }],
+    },
+  ]);
+  const diff = await t.api(`/api/git/diff?path=${encodeURIComponent("../spec/events/a.yaml")}`);
+  expect(diff.body.records).toEqual([{ key: "a", kind: "modified", fields: [{ field: "title", from: "A", to: "B" }] }]);
+  const refused = await t.api("/api/git/review", { method: "POST", body: { title: "T", paths: ["../src/app.ts"] } });
+  expect(refused.status).toBe(400);
+  const r = await t.api("/api/git/review", { method: "POST", body: { title: "T", paths: ["../spec/events/a.yaml"] } });
+  expect(r.status).toBe(200);
+  expect(git(bare, "show", `${r.body.branch}:spec/events/a.yaml`)).toBe("title: B\n");
+  expect(read(join(top, "src/app.ts"))).toBe("y\n");
 });

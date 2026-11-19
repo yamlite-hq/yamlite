@@ -113,13 +113,19 @@ export class NoRepository extends Error {
 }
 
 // the user's own git and gh; the repository is looked up on each use until one exists, so `git init` after start works
-export async function localDriver(root: string, gh: () => Promise<string | null>): Promise<WorkspaceDriver> {
+// reaches: a file outside the data folder that a table takes in, which status lists and a review may commit
+export async function localDriver(
+  root: string,
+  gh: () => Promise<string | null>,
+  reaches?: (file: string) => boolean,
+): Promise<WorkspaceDriver> {
   let found: { repo: Repo; steps: StepRunner } | null = null;
   let base: string | null = null;
   const lookup = async () => {
     if (found) return found;
-    const repo = await findRepo(root);
-    if (!repo) return null;
+    const at = await findRepo(root);
+    if (!at) return null;
+    const repo: Repo = reaches ? { ...at, reaches } : at;
     found ??= {
       repo,
       steps: {
@@ -197,7 +203,7 @@ export async function localDriver(root: string, gh: () => Promise<string | null>
             "-z",
             `${await defaultRef(f.repo, name)}...HEAD`,
             "--",
-            f.repo.prefix || ".",
+            f.repo.reaches ? "." : f.repo.prefix || ".",
           ]);
           const parts = out.split("\0");
           const changes: GitStatus["changes"] = [];
